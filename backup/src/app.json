@@ -1,0 +1,8 @@
+{
+  "android": {
+    "package": "com.jerryjiya.nbafantasyai"
+  },
+  "ios": {
+    "bundleIdentifier": "com.jerryjiya.nbafantasyai"
+  }
+}

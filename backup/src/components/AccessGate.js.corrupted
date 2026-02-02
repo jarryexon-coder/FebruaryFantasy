@@ -1,0 +1,138 @@
+// src/navigation/GroupedTabNavigator.js - REORGANIZED AS REQUESTED
+import React from 'react';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { View, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+
+// Import WrappedHomeScreen
+import WrappedHomeScreen from '../screens/WrappedHomeScreen.js';
+
+// Import ALL RESTORED SCREENS
+import LiveGamesScreen from '../screens/LiveGamesScreen-enhanced.js';           // ✅ 26KB restored
+import NHLScreen from '../screens/NHLScreen-enhanced.js';                       // ✅ 11KB current
+import GameDetailsScreen from '../screens/GameDetailsScreen.js';                // ✅ Simple version
+import NFLScreen from '../screens/NFLScreen-enhanced.js';                       // ✅ 88KB restored/fixed
+import PlayerStatsScreen from '../screens/PlayerStatsScreen-enhanced.js';       // ✅ 44KB restored
+import PlayerProfileScreen from '../screens/PlayerProfileScreen-enhanced.js';   // ✅ 50KB current
+import FantasyScreen from '../screens/FantasyScreen-enhanced-v2.js';            // ✅ 43KB restored
+import PredictionsScreen from '../screens/PredictionsScreen.js';                // ✅ 7KB current
+import ParlayBuilderScreen from '../screens/ParlayBuilderScreen.js';            // ✅ 11KB current
+import DailyPicksScreen from '../screens/DailyPicksScreen-enhanced.js';         // ✅ 45KB restored
+import SportsNewsHubScreen from '../screens/SportsNewsHub-enhanced.js';         // ✅ 62KB restored
+import AnalyticsScreen from '../screens/AnalyticsScreen-enhanced.js';           // ✅ 62KB current
+import EditorUpdatesScreen from '../screens/EditorUpdatesScreen.js';            // ✅ 6KB current
+
+// Import SearchProvider
+import { SearchProvider } from '../providers/SearchProvider';
+
+const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
+
+// ====== STACK NAVIGATORS ======
+
+// "All Access" Stack (Free features) - UPDATED as requested
+function AllAccessStack() {
+  return (
+    <SearchProvider>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="MarketMoves" component={EditorUpdatesScreen} />
+        <Stack.Screen name="LiveGames" component={LiveGamesScreen} />
+        <Stack.Screen name="NFLAnalytics" component={NFLScreen} />
+      </Stack.Navigator>
+    </SearchProvider>
+  );
+}
+
+// "Elite Insights" Stack (Premium features) - UPDATED as requested
+function EliteInsightsStack() {
+  return (
+    <SearchProvider>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="NHLTrends" component={NHLScreen} />
+        <Stack.Screen name="MatchAnalytics" component={GameDetailsScreen} />
+        <Stack.Screen name="FantasyTools" component={FantasyScreen} />
+        <Stack.Screen name="PlayerDashboard" component={PlayerProfileScreen} />
+      </Stack.Navigator>
+    </SearchProvider>
+  );
+}
+
+// "Success Metrics & Elite Picks" Stack (Premium features) - UPDATED as requested
+function SuccessMetricsStack() {
+  return (
+    <SearchProvider>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="PlayerMetrics" component={PlayerStatsScreen} />
+        <Stack.Screen name="ParlayArchitect" component={ParlayBuilderScreen} />
+        <Stack.Screen name="ExpertSelections" component={DailyPicksScreen} />
+        <Stack.Screen name="SportsWire" component={SportsNewsHubScreen} />
+        <Stack.Screen name="Predictions" component={PredictionsScreen} />
+        <Stack.Screen name="Analytics" component={AnalyticsScreen} />
+      </Stack.Navigator>
+    </SearchProvider>
+  );
+}
+
+// ====== MAIN TAB NAVIGATOR ======
+
+export default function GroupedTabNavigator() {
+  return (
+    <View style={styles.container}>
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          tabBarIcon: ({ focused, color, size }) => {
+            let iconName;
+            switch (route.name) {
+              case 'Home':
+                iconName = focused ? 'home' : 'home-outline';
+                break;
+              case 'AllAccess':
+                iconName = focused ? 'lock-open' : 'lock-open-outline';
+                break;
+              case 'EliteInsights':
+                iconName = focused ? 'star' : 'star-outline';
+                break;
+              case 'SuccessMetrics':
+                iconName = focused ? 'trophy' : 'trophy-outline';
+                break;
+              // Remove MarketMoves tab since it's now inside AllAccess
+              default:
+                iconName = 'help-circle';
+            }
+            return <Ionicons name={iconName} size={size} color={color} />;
+          },
+          tabBarActiveTintColor: '#ef4444',
+          tabBarInactiveTintColor: '#94a3b8',
+          tabBarStyle: {
+            backgroundColor: '#0f172a',
+            borderTopWidth: 1,
+            borderTopColor: '#334155',
+            paddingBottom: 8,
+            paddingTop: 8,
+            height: 60,
+          },
+          tabBarLabelStyle: { 
+            fontSize: 12,
+            marginBottom: 4, 
+            fontWeight: '500' 
+          },
+          headerShown: false,
+        })}
+        initialRouteName="Home"
+      >
+        <Tab.Screen name="Home" component={WrappedHomeScreen} options={{ tabBarLabel: 'Home' }}/>
+        <Tab.Screen name="AllAccess" component={AllAccessStack} options={{ tabBarLabel: 'All Access', unmountOnBlur: false }}/>
+        <Tab.Screen name="EliteInsights" component={EliteInsightsStack} options={{ tabBarLabel: 'Elite Insights', unmountOnBlur: false }}/>
+        <Tab.Screen name="SuccessMetrics" component={SuccessMetricsStack} options={{ tabBarLabel: 'Success & Picks', unmountOnBlur: false }}/>
+        {/* Remove the separate MarketMoves tab since it's now inside AllAccess */}
+      </Tab.Navigator>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+});

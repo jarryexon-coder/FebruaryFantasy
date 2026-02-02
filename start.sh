@@ -1,0 +1,175 @@
+#!/bin/bash
+echo "=== Starting NBA Fantasy Frontend ==="
+
+# Set default port if not provided
+PORT=${PORT:-8080}
+echo "Using port: $PORT"
+
+# Create HTML file - using single quotes to prevent variable expansion
+cat > index.html << 'HTML_EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>🏀 NBA Fantasy AI</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background: linear-gradient(135deg, #1d428a 0%, #c9082a 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 30px;
+            border-radius: 15px;
+            color: #333;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #1d428a;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .status-box {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 8px;
+            border-left: 5px solid;
+        }
+        .operational {
+            background: #d4edda;
+            border-left-color: #28a745;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+            color: #721c24;
+        }
+        button {
+            background: #1d428a;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+        button:hover {
+            background: #c9082a;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            min-height: 100px;
+        }
+        .url {
+            font-family: monospace;
+            background: #f8f9fa;
+            padding: 5px;
+            border-radius: 3px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏀 NBA Fantasy AI</h1>
+        <p>Your application is successfully deployed on Railway!</p>
+        
+        <div class="status-box operational">
+            <h3>✅ Frontend: OPERATIONAL</h3>
+            <p><strong>URL:</strong> <span class="url">https://februaryfantasy-production.up.railway.app</span></p>
+        </div>
+        
+        <div class="status-box operational">
+            <h3>✅ Backend: OPERATIONAL</h3>
+            <p><strong>URL:</strong> <span class="url">https://pleasing-determination-production.up.railway.app</span></p>
+        </div>
+        
+        <h3>Test Backend Connection:</h3>
+        <button onclick="testBackend('health')">Test Health Endpoint</button>
+        <button onclick="testBackend('cors-test')">Test CORS Endpoint</button>
+        <button onclick="testBackend('nba')">Test NBA API</button>
+        
+        <div id="result"></div>
+        
+        <h3>Quick Links:</h3>
+        <ul>
+            <li><a href="https://pleasing-determination-production.up.railway.app/health" target="_blank">Backend Health Check</a></li>
+            <li><a href="https://pleasing-determination-production.up.railway.app/api/nba" target="_blank">NBA Games API</a></li>
+            <li><a href="https://pleasing-determination-production.up.railway.app/api/cors-test" target="_blank">CORS Test Endpoint</a></li>
+        </ul>
+    </div>
+    
+    <script>
+        async function testBackend(endpoint) {
+            const result = document.getElementById('result');
+            const backendUrl = 'https://pleasing-determination-production.up.railway.app';
+            let url;
+            
+            switch(endpoint) {
+                case 'health': url = backendUrl + '/health'; break;
+                case 'cors-test': url = backendUrl + '/api/cors-test'; break;
+                case 'nba': url = backendUrl + '/api/nba'; break;
+                default: url = backendUrl + '/health';
+            }
+            
+            result.innerHTML = 'Testing: <span class="url">' + url + '</span><br>';
+            
+            try {
+                const response = await fetch(url, {
+                    mode: 'cors',
+                    credentials: 'include'
+                });
+                
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                }
+                
+                const data = await response.json();
+                result.innerHTML = result.innerHTML + '<div class="status-box operational">' +
+                    '✅ Connected successfully!<br><br>' +
+                    '<strong>Response:</strong><br>' +
+                    '<pre>' + JSON.stringify(data, null, 2) + '</pre>' +
+                    '</div>';
+                
+            } catch (error) {
+                result.innerHTML = result.innerHTML + '<div class="status-box error">' +
+                    '❌ Connection failed!<br><br>' +
+                    '<strong>Error:</strong> ' + error.message + '<br><br>' +
+                    '<strong>Likely Causes:</strong>' +
+                    '<ol>' +
+                    '<li>CORS misconfiguration on backend</li>' +
+                    '<li>Backend service down (but logs show it\'s running)</li>' +
+                    '<li>Network/firewall issue</li>' +
+                    '</ol>' +
+                    '<strong>Debug Steps:</strong>' +
+                    '<ol>' +
+                    '<li>Check backend CORS configuration</li>' +
+                    '<li>Test directly: <a href="' + url + '" target="_blank">' + url + '</a></li>' +
+                    '<li>Check browser console for detailed error</li>' +
+                    '</ol>' +
+                    '</div>';
+                
+                // Log to console for debugging
+                console.error('Backend test failed:', error);
+            }
+        }
+        
+        // Auto-test on page load
+        window.addEventListener('load', function() {
+            testBackend('health');
+        });
+    </script>
+</body>
+</html>
+HTML_EOF
+
+echo "✅ Serving on port $PORT"
+npx serve . -l $PORT

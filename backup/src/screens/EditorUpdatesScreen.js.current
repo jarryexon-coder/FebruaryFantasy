@@ -1,0 +1,1084 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  RefreshControl,
+  ActivityIndicator,
+  Platform,
+  Dimensions
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+// REMOVED: import { useNavigation, useFocusEffect } from '@react-navigation/native';
+// NEW: Import navigation helper
+import { useNavigation } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const { width } = Dimensions.get('window');
+
+// Firebase Analytics
+const logAnalyticsEvent = async (eventName, eventParams = {}) => {
+  try {
+    const eventData = {
+      event: eventName,
+      params: eventParams,
+      timestamp: new Date().toISOString(),
+      platform: Platform.OS,
+    };
+
+    console.log(`📊 Editor Analytics Event: ${eventName}`, eventParams);
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && !__DEV__) {
+      try {
+        const firebaseApp = await import('firebase/app');
+        const firebaseAnalytics = await import('firebase/analytics');
+        
+        let app;
+        if (firebaseApp.getApps().length === 0) {
+          const firebaseConfig = {
+            apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || "AIzaSyCi7YQ-vawFT3sIr1i8yuhhx-1vSplAneA",
+            authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || "nba-fantasy-ai.firebaseapp.com",
+            projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "nba-fantasy-ai",
+            storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "nba-fantasy-ai.appspot.com",
+            messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "718718403866",
+            appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || "1:718718403866:web:e26e10994d62799a048379",
+            measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID || "G-BLTPX9LJ7K"
+          };
+          
+          app = firebaseApp.initializeApp(firebaseConfig);
+        } else {
+          app = firebaseApp.getApp();
+        }
+        
+        const analytics = firebaseAnalytics.getAnalytics(app);
+        if (analytics) {
+          await firebaseAnalytics.logEvent(analytics, eventName, eventParams);
+        }
+      } catch (firebaseError) {
+        console.warn('Firebase analytics error:', firebaseError.message);
+      }
+    }
+    
+    try {
+      const existingEvents = JSON.parse(await AsyncStorage.getItem('analytics_events') || '[]');
+      existingEvents.push(eventData);
+      if (existingEvents.length > 100) {
+        existingEvents.splice(0, existingEvents.length - 100);
+      }
+      await AsyncStorage.setItem('analytics_events', JSON.stringify(existingEvents));
+    } catch (storageError) {
+      console.warn('Could not save analytics event locally:', storageError.message);
+    }
+  } catch (error) {
+    console.warn('Analytics event failed:', error.message);
+  }
+};
+
+const EditorUpdatesScreen = () => {
+  // NEW: Use the app navigation helper
+  const navigation = useNavigation();
+  
+  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [updates, setUpdates] = useState([]);
+  const [readStatus, setReadStatus] = useState({});
+  const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [useFallback, setUseFallback] = useState(false);
+
+  // NEW: Navigation helper functions
+  const handleNavigateToPlayerStats = () => {
+    navigation.goToPlayerStats();
+    logAnalyticsEvent('editor_updates_navigate_player_stats', {
+      screen_name: 'Editor Updates Screen'
+    });
+  };
+
+  const handleNavigateToAnalytics = () => {
+    navigation.goToAnalytics();
+    logAnalyticsEvent('editor_updates_navigate_analytics', {
+      screen_name: 'Editor Updates Screen'
+    });
+  };
+
+  const handleNavigateToPredictions = () => {
+    navigation.goToPredictions();
+    logAnalyticsEvent('editor_updates_navigate_predictions', {
+      screen_name: 'Editor Updates Screen'
+    });
+  };
+
+  const handleNavigateToFantasy = () => {
+    navigation.goToFantasy();
+    logAnalyticsEvent('editor_updates_navigate_fantasy', {
+      screen_name: 'Editor Updates Screen'
+    });
+  };
+
+  const handleNavigateToGameDetails = () => {
+    navigation.goToGameDetails();
+    logAnalyticsEvent('editor_updates_navigate_game_details', {
+      screen_name: 'Editor Updates Screen'
+    });
+  };
+
+  const handleNavigateToSettings = () => {
+    navigation.goToSettings();
+    logAnalyticsEvent('editor_updates_navigate_settings', {
+      screen_name: 'Editor Updates Screen'
+    });
+  };
+
+  // NEW: Navigation menu component
+  const renderNavigationMenu = () => (
+    <View style={styles.navigationMenu}>
+      <TouchableOpacity 
+        style={styles.navButton}
+        onPress={() => handleNavigateToPlayerStats()}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="stats-chart" size={20} color="white" />
+        <Text style={styles.navButtonText}>Player Stats</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.navButton}
+        onPress={() => handleNavigateToAnalytics()}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="analytics" size={20} color="white" />
+        <Text style={styles.navButtonText}>Analytics</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.navButton}
+        onPress={() => handleNavigateToPredictions()}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="trending-up" size={20} color="white" />
+        <Text style={styles.navButtonText}>AI Predict</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.navButton}
+        onPress={() => handleNavigateToFantasy()}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="trophy" size={20} color="white" />
+        <Text style={styles.navButtonText}>Fantasy</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const updateCategories = {
+    feature: { icon: 'rocket', color: '#3b82f6', label: 'Feature' },
+    update: { icon: 'refresh', color: '#10b981', label: 'Update' },
+    fix: { icon: 'bug', color: '#ef4444', label: 'Fix' },
+    announcement: { icon: 'megaphone', color: '#f59e0b', label: 'Announcement' },
+    performance: { icon: 'speedometer', color: '#8b5cf6', label: 'Performance' },
+  };
+
+  const getSampleUpdates = () => [
+    {
+      id: '1',
+      title: 'New NBA Analytics Dashboard',
+      description: 'We\'ve launched a new analytics dashboard with real-time player tracking and advanced metrics.',
+      date: 'Today',
+      category: 'feature',
+      icon: 'analytics',
+      color: '#3b82f6',
+    },
+    {
+      id: '2',
+      title: 'Live Game Tracking Enhanced',
+      description: 'Our live game tracking now includes player efficiency ratings and advanced shot charts.',
+      date: 'Yesterday',
+      category: 'update',
+      icon: 'pulse',
+      color: '#10b981',
+    },
+    {
+      id: '3',
+      title: 'Bug Fixes & Performance Improvements',
+      description: 'Fixed several bugs and improved overall app performance. Enhanced offline support and reduced loading times.',
+      date: '2 days ago',
+      category: 'fix',
+      icon: 'bug',
+      color: '#ef4444',
+    },
+    {
+      id: '4',
+      title: 'New Player Profile Features',
+      description: 'Added advanced player statistics, career highlights, and comparison tools to player profiles.',
+      date: '3 days ago',
+      category: 'feature',
+      icon: 'person',
+      color: '#3b82f6',
+    },
+    {
+      id: '5',
+      title: 'Predictions AI Model Updated',
+      description: 'Our AI prediction model has been updated with more data and improved accuracy algorithms.',
+      date: '1 week ago',
+      category: 'performance',
+      icon: 'analytics',
+      color: '#8b5cf6',
+    },
+  ];
+
+  const formatDate = (timestamp) => {
+    if (!timestamp) return 'Recently';
+    
+    const date = timestamp?.toDate ? timestamp.toDate() : new Date(timestamp);
+    const now = new Date();
+    const diffTime = Math.abs(now - date);
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+    
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  const formatTime = (date) => {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const fetchUpdates = async (isRefresh = false) => {
+    try {
+      setLoading(true);
+      
+      await logAnalyticsEvent('editor_updates_fetch_start', {
+        is_refresh: isRefresh,
+      });
+      
+      try {
+        // Try to use Firebase if available
+        const { getFirestore, collection, getDocs, query, orderBy, limit } = await import('firebase/firestore');
+        const { getApp } = await import('firebase/app');
+        
+        let app;
+        try {
+          app = getApp();
+        } catch (e) {
+          throw new Error('Firebase not initialized');
+        }
+        
+        const db = getFirestore(app);
+        const updatesRef = collection(db, 'editor_updates');
+        const q = query(
+          updatesRef,
+          orderBy('createdAt', 'desc'),
+          limit(20)
+        );
+
+        const querySnapshot = await getDocs(q);
+        
+        const updatesData = [];
+        
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          updatesData.push({
+            id: doc.id,
+            ...data,
+            date: formatDate(data.createdAt),
+            createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : data.createdAt,
+          });
+        });
+
+        setUpdates(updatesData);
+        setUseFallback(false);
+        
+        await logAnalyticsEvent('editor_updates_fetch_success', {
+          count: updatesData.length,
+          is_refresh: isRefresh,
+          source: 'firebase',
+        });
+        
+      } catch (firestoreError) {
+        console.log('Using fallback updates:', firestoreError.message);
+        const sampleUpdates = getSampleUpdates();
+        setUpdates(sampleUpdates);
+        setUseFallback(true);
+        
+        await logAnalyticsEvent('editor_updates_fetch_fallback', {
+          error: firestoreError.message,
+          count: sampleUpdates.length,
+          is_refresh: isRefresh,
+          source: 'fallback',
+        });
+      }
+      
+      setLastRefresh(new Date());
+      
+    } catch (error) {
+      console.error('Error fetching updates:', error);
+      
+      const sampleUpdates = getSampleUpdates();
+      setUpdates(sampleUpdates);
+      setUseFallback(true);
+      
+      await logAnalyticsEvent('editor_updates_fetch_error', {
+        error: error.message,
+        count: sampleUpdates.length,
+        is_refresh: isRefresh,
+        source: 'error_fallback',
+      });
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    logAnalyticsEvent('editor_updates_screen_view', {
+      timestamp: new Date().toISOString(),
+    });
+    
+    fetchUpdates();
+  }, []);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await logAnalyticsEvent('editor_updates_manual_refresh', {
+      timestamp: new Date().toISOString(),
+    });
+    await fetchUpdates(true);
+  };
+
+  const markAsRead = async (id) => {
+    const update = updates.find(u => u.id === id);
+    
+    await logAnalyticsEvent('editor_updates_mark_read', {
+      update_id: id,
+      update_title: update?.title || 'Unknown',
+      update_category: update?.category || 'Unknown',
+    });
+    
+    const updatedReadStatus = { ...readStatus, [id]: true };
+    setReadStatus(updatedReadStatus);
+
+    try {
+      await AsyncStorage.setItem('editor_updates_read', JSON.stringify(updatedReadStatus));
+    } catch (error) {
+      console.error('Error saving read status:', error);
+    }
+  };
+
+  useEffect(() => {
+    const loadReadStatus = async () => {
+      try {
+        const savedStatus = await AsyncStorage.getItem('editor_updates_read');
+        if (savedStatus) {
+          setReadStatus(JSON.parse(savedStatus));
+        }
+      } catch (error) {
+        console.error('Error loading read status:', error);
+      }
+    };
+    
+    loadReadStatus();
+  }, []);
+
+  const unreadCount = updates.filter(update => !readStatus[update.id]).length;
+
+  const handleBackPress = async () => {
+    await logAnalyticsEvent('editor_updates_back', {
+      unread_count: unreadCount,
+      total_updates: updates.length,
+      time_spent: Math.floor((new Date() - lastRefresh) / 1000) + 's',
+    });
+    navigation.goBack();
+  };
+
+  const renderHeader = () => (
+    <View style={styles.headerContainer}>
+      <LinearGradient
+        colors={['#7c3aed', '#8b5cf6']}
+        style={styles.header}
+      >
+        <View style={styles.headerTop}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={handleBackPress}
+          >
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerTitle}>Editor's Updates</Text>
+            <Text style={styles.headerSubtitle}>Latest features & announcements</Text>
+          </View>
+          {unreadCount > 0 && (
+            <View style={styles.unreadBadge}>
+              <Text style={styles.unreadText}>{unreadCount}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* NEW: Add navigation menu to header */}
+        <View style={styles.navigationMenuContainer}>
+          {renderNavigationMenu()}
+        </View>
+      </LinearGradient>
+    </View>
+  );
+
+  const renderUpdateCard = (update) => {
+    const isRead = readStatus[update.id] || false;
+    const category = updateCategories[update.category] || updateCategories.announcement;
+    
+    // Create dynamic styles for category badge
+    const categoryBadgeDynamicStyles = {
+      backgroundColor: `${category.color}20`,
+      borderColor: `${category.color}30`,
+    };
+    
+    return (
+      <View style={styles.updateCardWrapper} key={update.id}>
+        <View style={styles.updateCardInner}>
+          <TouchableOpacity 
+            style={[
+              styles.updateCard,
+              !isRead && styles.unreadCard,
+              { borderLeftColor: category.color }
+            ]}
+            onPress={() => markAsRead(update.id)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.updateHeader}>
+              <View style={styles.categoryBadgeContainer}>
+                <View style={[styles.categoryBadge, categoryBadgeDynamicStyles]}>
+                  <Ionicons name={category.icon} size={14} color={category.color} />
+                  <Text style={[styles.categoryText, { color: category.color }]}>
+                    {category.label}
+                  </Text>
+                </View>
+                <Text style={styles.dateText}>{update.date}</Text>
+              </View>
+            </View>
+            
+            <View style={styles.updateContent}>
+              <Text style={styles.updateTitle}>{update.title}</Text>
+              <Text style={styles.updateDescription}>{update.description}</Text>
+            </View>
+            
+            {!isRead && (
+              <View style={styles.unreadIndicator} />
+            )}
+            
+            {useFallback && (
+              <View style={styles.fallbackBadge}>
+                <Ionicons name="cloud-offline-outline" size={12} color="#6b7280" />
+                <Text style={styles.fallbackText}>Cached</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  const renderRefreshIndicator = () => (
+    <View style={styles.refreshIndicatorContainer}>
+      <View style={styles.refreshIndicator}>
+        <Ionicons name="time" size={12} color="#6b7280" />
+        <Text style={styles.refreshText}>
+          Updated: {formatTime(lastRefresh)}
+        </Text>
+        <TouchableOpacity onPress={onRefresh}>
+          <Ionicons name="refresh" size={14} color="#7c3aed" style={styles.refreshIcon} />
+        </TouchableOpacity>
+        {useFallback && (
+          <View style={styles.offlineBadge}>
+            <Ionicons name="cloud-offline-outline" size={12} color="#ef4444" />
+            <Text style={styles.offlineText}>Offline Mode</Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+
+  // NEW: Quick Navigation Section
+  const renderQuickNavigation = () => (
+    <View style={styles.quickNavSection}>
+      <Text style={styles.quickNavTitle}>Quick Navigation</Text>
+      <View style={styles.quickNavGrid}>
+        <TouchableOpacity 
+          style={styles.quickNavCard}
+          onPress={() => handleNavigateToPlayerStats()}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickNavIcon, { backgroundColor: '#3b82f620' }]}>
+            <Ionicons name="stats-chart" size={20} color="#3b82f6" />
+          </View>
+          <Text style={styles.quickNavText}>Player Stats</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.quickNavCard}
+          onPress={() => handleNavigateToAnalytics()}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickNavIcon, { backgroundColor: '#10b98120' }]}>
+            <Ionicons name="analytics" size={20} color="#10b981" />
+          </View>
+          <Text style={styles.quickNavText}>Analytics</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.quickNavCard}
+          onPress={() => handleNavigateToPredictions()}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickNavIcon, { backgroundColor: '#8b5cf620' }]}>
+            <Ionicons name="trending-up" size={20} color="#8b5cf6" />
+          </View>
+          <Text style={styles.quickNavText}>AI Predictions</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.quickNavCard}
+          onPress={() => handleNavigateToFantasy()}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.quickNavIcon, { backgroundColor: '#f59e0b20' }]}>
+            <Ionicons name="trophy" size={20} color="#f59e0b" />
+          </View>
+          <Text style={styles.quickNavText}>Fantasy</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  if (loading && updates.length === 0) {
+    return (
+      <View style={styles.container}>
+        {renderHeader()}
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#7c3aed" />
+          <Text style={styles.loadingText}>Loading updates...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      {renderHeader()}
+      {renderRefreshIndicator()}
+      
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh}
+            colors={['#7c3aed']}
+            tintColor="#7c3aed"
+          />
+        }
+      >
+        {renderQuickNavigation()}
+        
+        <View style={styles.updatesContainer}>
+          {updates.length > 0 ? (
+            updates.map(update => renderUpdateCard(update))
+          ) : (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="newspaper-outline" size={64} color="#cbd5e1" />
+              <Text style={styles.emptyText}>No updates available</Text>
+              <Text style={styles.emptySubtext}>Check your connection and try again</Text>
+              <TouchableOpacity 
+                style={styles.retryButton}
+                onPress={onRefresh}
+              >
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+        
+        <View style={styles.infoSection}>
+          <View style={styles.infoCard}>
+            <Ionicons name="information-circle" size={24} color="#3b82f6" />
+            <Text style={styles.infoTitle}>About Updates</Text>
+            <Text style={styles.infoText}>
+              We regularly release new features and improvements. Check back here for the latest announcements.
+            </Text>
+            {useFallback && (
+              <View style={styles.infoNote}>
+                <Ionicons name="information-circle" size={14} color="#f59e0b" />
+                <Text style={styles.infoNoteText}>
+                  Showing cached updates. Connect to internet for live data.
+                </Text>
+              </View>
+            )}
+          </View>
+          
+          <TouchableOpacity 
+            style={styles.feedbackButton}
+            onPress={async () => {
+              await logAnalyticsEvent('editor_updates_feedback_click', {});
+              handleNavigateToSettings();
+            }}
+          >
+            <Ionicons name="chatbubble-ellipses" size={20} color="#3b82f6" />
+            <Text style={styles.feedbackButtonText}>Send Feedback</Text>
+          </TouchableOpacity>
+
+          {/* NEW: Quick Settings Link */}
+          <TouchableOpacity 
+            style={styles.settingsButton}
+            onPress={async () => {
+              await logAnalyticsEvent('editor_updates_settings_click', {});
+              handleNavigateToSettings();
+            }}
+          >
+            <Ionicons name="settings" size={20} color="#7c3aed" />
+            <Text style={styles.settingsButtonText}>Go to Settings</Text>
+            <Ionicons name="arrow-forward" size={16} color="#7c3aed" />
+          </TouchableOpacity>
+        </View>
+        
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>App Version 1.2.0</Text>
+          <Text style={styles.footerSubtext}>Last updated: {formatDate(new Date())}</Text>
+        </View>
+      </ScrollView>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  headerContainer: {
+    backgroundColor: '#f8fafc',
+  },
+  header: {
+    paddingTop: 50,
+    paddingBottom: 20,
+    paddingHorizontal: 16,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  backButton: {
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 10,
+  },
+  headerTitleContainer: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.9)',
+  },
+  // NEW: Navigation menu styles
+  navigationMenuContainer: {
+    marginTop: 16,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 12,
+    padding: 8,
+  },
+  
+  navigationMenu: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  
+  navButton: {
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  
+  navButtonText: {
+    color: 'white',
+    fontSize: 10,
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  unreadBadge: {
+    backgroundColor: '#ef4444',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  unreadText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  // NEW: Quick Navigation Styles
+  quickNavSection: {
+    backgroundColor: 'white',
+    marginHorizontal: 16,
+    marginVertical: 16,
+    borderRadius: 15,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  quickNavTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 15,
+  },
+  quickNavGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  quickNavCard: {
+    width: '48%',
+    backgroundColor: '#f8fafc',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  quickNavIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  quickNavText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1f2937',
+    textAlign: 'center',
+  },
+  refreshIndicatorContainer: {
+    backgroundColor: '#f8fafc',
+  },
+  refreshIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    backgroundColor: '#f8fafc',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  refreshText: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginLeft: 6,
+  },
+  refreshIcon: {
+    marginLeft: 8,
+  },
+  offlineBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 12,
+    backgroundColor: '#fee2e2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  offlineText: {
+    fontSize: 11,
+    color: '#ef4444',
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  scrollView: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  scrollContent: {
+    paddingBottom: 20,
+  },
+  updatesContainer: {
+    padding: 16,
+    backgroundColor: 'transparent',
+  },
+  updateCardWrapper: {
+    marginBottom: 12,
+    backgroundColor: 'transparent',
+  },
+  updateCardInner: {
+    backgroundColor: 'transparent',
+  },
+  updateCard: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderLeftWidth: 4,
+  },
+  unreadCard: {
+    borderLeftWidth: 4,
+  },
+  updateHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    backgroundColor: 'transparent',
+  },
+  // Container style for shadow optimization
+  categoryBadgeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  categoryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  categoryText: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  dateText: {
+    fontSize: 12,
+    color: '#9ca3af',
+  },
+  updateContent: {
+    marginBottom: 8,
+    backgroundColor: 'transparent',
+  },
+  updateTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 8,
+  },
+  updateDescription: {
+    fontSize: 14,
+    color: '#6b7280',
+    lineHeight: 20,
+  },
+  unreadIndicator: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#3b82f6',
+  },
+  fallbackBadge: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  fallbackText: {
+    fontSize: 10,
+    color: '#6b7280',
+    marginLeft: 4,
+  },
+  infoSection: {
+    paddingHorizontal: 16,
+    marginBottom: 20,
+    backgroundColor: 'transparent',
+  },
+  infoCard: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 3,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  infoTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  infoNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fffbeb',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 12,
+    width: '100%',
+  },
+  infoNoteText: {
+    fontSize: 12,
+    color: '#92400e',
+    marginLeft: 8,
+    flex: 1,
+  },
+  feedbackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 12,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    marginBottom: 12,
+  },
+  feedbackButtonText: {
+    color: '#3b82f6',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  // NEW: Settings button styles
+  settingsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 12,
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  settingsButtonText: {
+    color: '#7c3aed',
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+    marginLeft: 8,
+  },
+  footer: {
+    padding: 20,
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    marginTop: 8,
+    backgroundColor: 'transparent',
+  },
+  footerText: {
+    fontSize: 14,
+    color: '#64748B',
+  },
+  footerSubtext: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 4,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#666',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    backgroundColor: 'white',
+    padding: 40,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#94A3B8',
+    marginTop: 8,
+  },
+  retryButton: {
+    marginTop: 20,
+    backgroundColor: '#7c3aed',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+});
+
+export default EditorUpdatesScreen;

@@ -1,0 +1,29 @@
+Frontend Environment Variables for NBA Fantasy App
+NODE_ENV=production
+EXPO_PUBLIC_API_URL=https://pleasing-determination-production.up.railway.app
+EXPO_PUBLIC_ENVIRONMENT=development
+EXPO_PUBLIC_ENABLE_ANALYTICS=true
+EXPO_PUBLIC_REVENUECAT_TEST_KEY=test_FmMHkCAemjiaMpSQrjVzfipnEHx
+EXPO_PUBLIC_RC_IOS_API_KEY=appl_CECcTriikOOrbJKnYIpjfsZsoLd
+EXPO_PUBLIC_RC_ANDROID_API_KEY=goog_lmYtEWdbcjoARmJQIkPHykVSBMT
+
+# Firebase Configuration (from your app.json)
+EXPO_PUBLIC_FIREBASE_API_KEY=AIzaSyBjE2Of8ox9OMph797VOu05kbXwCUrDrlY
+EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=ai-fantasy-assistant-aa2f6.firebaseapp.com
+EXPO_PUBLIC_FIREBASE_PROJECT_ID=ai-fantasy-assistant-aa2f6
+EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=ai-fantasy-assistant-aa2f6.firebasestorage.app
+EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=909799347654
+EXPO_PUBLIC_FIREBASE_APP_ID=1:909799347654:web:adca0f7aec0ad9e9f48ec7
+EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID=G-QTSWN0T7JV
+# App Configuration
+EXPO_PUBLIC_APP_NAME="NBA Fantasy App"
+EXPO_PUBLIC_APP_VERSION="1.0.0"
+EXPO_PUBLIC_APP_SCHEME="nbafantasyapp"
+
+# Feature Flags
+EXPO_PUBLIC_ENABLE_MOCK_FALLBACK=true
+EXPO_PUBLIC_ENABLE_NEWS=false  # Set to true when backend implements news endpoint
+EXPO_PUBLIC_USE_BACKEND=true
+EXPO_PUBLIC_FALLBACK_TO_SAMPLE=true
+
+# ⚠️ NO SportsData.io API Keys Here - They stay in your Railway backend!

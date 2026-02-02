@@ -1,0 +1,236 @@
+src/navigation/GroupedTabNavigator.js
+import React from 'react';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import Icon from 'react-native-vector-icons/Ionicons';
+
+// Import Hub Screens
+import AllAccessHubScreen from '../screens/AllAccessHubScreen';
+import SuperStatsHubScreen from '../screens/SuperStatsHubScreen';
+import AIGeneratorsHubScreen from '../screens/AIGeneratorsHubScreen';
+import EliteToolsHubScreen from '../screens/EliteToolsHubScreen';
+
+// Import Individual Screens
+import LiveGamesScreen from '../screens/LiveGamesScreen';
+import NFLAnalyticsScreen from '../screens/NFLAnalyticsScreen';
+import NewsDeskScreen from '../screens/NewsDeskScreen';
+import FantasyHubScreen from '../screens/FantasyHubScreen';
+import PlayerStatsScreen from '../screens/PlayerStatsScreen';
+import SportsWireScreen from '../screens/SportsWireScreen';
+import NHLTrendsScreen from '../screens/NHLTrendsScreen';
+import MatchAnalyticsScreen from '../screens/MatchAnalyticsScreen';
+import DailyPicksScreen from '../screens/DailyPicksScreen';
+import ParlayArchitectScreen from '../screens/ParlayArchitectScreen';
+import AdvancedAnalyticsScreen from '../screens/AdvancedAnalyticsScreen';
+import PredictionsOutcomeScreen from '../screens/PredictionsOutcomeScreen';
+import KalshiPredictionsScreen from '../screens/KalshiPredictionsScreen';
+import SecretPhrasesScreen from '../screens/SecretPhraseScreen';
+import HomeScreen from '../screens/HomeScreen';
+import SubscriptionScreen from '../screens/SubscriptionScreen';
+
+// Create stack navigators
+const AllAccessStack = createStackNavigator();
+const SuperStatsStack = createStackNavigator();
+const AIGeneratorsStack = createStackNavigator();
+const EliteToolsStack = createStackNavigator();
+
+// Create stack components
+function AllAccessStackScreen() {
+  return (
+    <AllAccessStack.Navigator 
+      screenOptions={{ 
+        headerShown: false,
+        cardStyle: { backgroundColor: '#0a0a0a' }
+      }}
+    >
+      <AllAccessStack.Screen 
+        name="AllAccessHub" 
+        component={AllAccessHubScreen} 
+      />
+      <AllAccessStack.Screen 
+        name="LiveGames" 
+        component={LiveGamesScreen} 
+      />
+      <AllAccessStack.Screen 
+        name="NFLAnalytics" 
+        component={NFLAnalyticsScreen} 
+      />
+      <AllAccessStack.Screen 
+        name="NewsDesk" 
+        component={NewsDeskScreen} 
+      />
+    </AllAccessStack.Navigator>
+  );
+}
+
+function SuperStatsStackScreen() {
+  return (
+    <SuperStatsStack.Navigator 
+      screenOptions={{ 
+        headerShown: false,
+        cardStyle: { backgroundColor: '#0a0a0a' }
+      }}
+    >
+      <SuperStatsStack.Screen 
+        name="SuperStatsHub" 
+        component={SuperStatsHubScreen} 
+      />
+      <SuperStatsStack.Screen 
+        name="FantasyHub" 
+        component={FantasyHubScreen} 
+      />
+      <SuperStatsStack.Screen 
+        name="PlayerStats" 
+        component={PlayerStatsScreen} 
+      />
+      <SuperStatsStack.Screen 
+        name="SportsWire" 
+        component={SportsWireScreen} 
+      />
+      <SuperStatsStack.Screen 
+        name="NHLTrends" 
+        component={NHLTrendsScreen} 
+      />
+      <SuperStatsStack.Screen 
+        name="MatchAnalytics" 
+        component={MatchAnalyticsScreen} 
+      />
+    </SuperStatsStack.Navigator>
+  );
+}
+
+function AIGeneratorsStackScreen() {
+  return (
+    <AIGeneratorsStack.Navigator 
+      screenOptions={{ 
+        headerShown: false,
+        cardStyle: { backgroundColor: '#0a0a0a' }
+      }}
+    >
+      <AIGeneratorsStack.Screen 
+        name="AIGeneratorsHub" 
+        component={AIGeneratorsHubScreen} 
+      />
+      <AIGeneratorsStack.Screen 
+        name="DailyPicks" 
+        component={DailyPicksScreen} 
+      />
+      <AIGeneratorsStack.Screen 
+        name="ParlayArchitect" 
+        component={ParlayArchitectScreen} 
+      />
+      <AIGeneratorsStack.Screen 
+        name="AdvancedAnalytics" 
+        component={AdvancedAnalyticsScreen} 
+      />
+      <AIGeneratorsStack.Screen 
+        name="PredictionsOutcome" 
+        component={PredictionsOutcomeScreen} 
+      />
+    </AIGeneratorsStack.Navigator>
+  );
+}
+
+function EliteToolsStackScreen() {
+  return (
+    <EliteToolsStack.Navigator 
+      screenOptions={{ 
+        headerShown: false,
+        cardStyle: { backgroundColor: '#0a0a0a' }
+      }}
+    >
+      <EliteToolsStack.Screen 
+        name="EliteToolsHub" 
+        component={EliteToolsHubScreen} 
+      />
+      <EliteToolsStack.Screen 
+        name="KalshiPredictions" 
+        component={KalshiPredictionsScreen} 
+      />
+      <EliteToolsStack.Screen 
+        name="SecretPhrases" 
+        component={SecretPhrasesScreen} 
+      />
+    </EliteToolsStack.Navigator>
+  );
+}
+
+// Create the main tab navigator
+const Tab = createBottomTabNavigator();
+
+export default function GroupedTabNavigator() {
+  return (
+    <Tab.Navigator
+      initialRouteName="Home"
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarStyle: {
+          backgroundColor: '#0a0a0a',
+          borderTopColor: '#333',
+          height: 60,
+          paddingBottom: 5,
+        },
+        tabBarActiveTintColor: '#007AFF',
+        tabBarInactiveTintColor: '#8E8E93',
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '500',
+        },
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName;
+          
+          if (route.name === 'Home') {
+            iconName = focused ? 'home' : 'home-outline';
+          } else if (route.name === 'AllAccess') {
+            iconName = focused ? 'flash' : 'flash-outline';
+          } else if (route.name === 'SuperStats') {
+            iconName = focused ? 'stats-chart' : 'stats-chart-outline';
+          } else if (route.name === 'AIGenerators') {
+            iconName = focused ? 'sparkles' : 'sparkles-outline';
+          } else if (route.name === 'EliteTools') {
+            iconName = focused ? 'shield' : 'shield-outline';
+          } else if (route.name === 'Subscription') {
+            iconName = focused ? 'star' : 'star-outline';
+          }
+          
+          return <Icon name={iconName} size={size} color={color} />;
+        },
+      })}
+    >
+      <Tab.Screen 
+        name="Home" 
+        component={HomeScreen}
+        options={{ tabBarLabel: 'Home' }}
+      />
+      
+      <Tab.Screen 
+        name="AllAccess" 
+        component={AllAccessStackScreen}
+        options={{ tabBarLabel: 'All Access' }}
+      />
+      
+      <Tab.Screen 
+        name="SuperStats" 
+        component={SuperStatsStackScreen}
+        options={{ tabBarLabel: 'Super Stats' }}
+      />
+      
+      <Tab.Screen 
+        name="AIGenerators" 
+        component={AIGeneratorsStackScreen}
+        options={{ tabBarLabel: 'AI Tools' }}
+      />
+      
+      <Tab.Screen 
+        name="EliteTools" 
+        component={EliteToolsStackScreen}
+        options={{ tabBarLabel: 'Elite' }}
+      />
+      
+      <Tab.Screen 
+        name="Subscription" 
+        component={SubscriptionScreen}
+        options={{ tabBarLabel: 'Premium' }}
+      />
+    </Tab.Navigator>
+  );
+}

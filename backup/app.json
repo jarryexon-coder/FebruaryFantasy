@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "NBAFantasyApp-Clean",
+    "slug": "NBAFantasyApp-Clean",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.jerryjiya.NBAFantasyAppClean"
+    },
+    "android": {
+      "package": "com.jerryjiya.NBAFantasyAppClean"
+    },
+    "plugins": [
+      "expo-asset",
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "32c4727b-948c-4e8b-8313-9ca5d488f43c"
+      }
+    },
+    "owner": "jerryjiya"
+  }
+}

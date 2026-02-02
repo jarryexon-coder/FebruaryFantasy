@@ -1,0 +1,69 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Expo
+.expo/
+.expo-shared/
+.expo-web-cache/
+
+# Android
+android/.gradle
+android/.idea
+android/build
+android/local.properties
+android/captures
+android/*.iml
+android/app/build
+android/app/src/debug
+android/app/src/release
+
+# iOS
+ios/build
+ios/Pods
+ios/*.xcworkspace
+ios/*.xcodeproj/project.xcworkspace
+ios/*.xcodeproj/xcuserdata
+DerivedData
+*.xcuserstate
+
+# Build
+dist/
+build/
+release/
+*.apk
+*.aab
+*.ipa
+*.dSYM.zip
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing
+coverage/
+.nyc_output
+
+# Logs
+*.log
+
+# Misc
+*.pem
+*.p12
+*.key
+*.mobileprovision

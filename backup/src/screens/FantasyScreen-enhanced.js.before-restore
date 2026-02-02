@@ -1,0 +1,191 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, FlatList } from 'react-native';
+
+export default function FantasyScreen() {
+  const [players] = useState([
+    { id: 1, name: 'LeBron James', team: 'LAL', position: 'SF', points: 28.5, value: 65 },
+    { id: 2, name: 'Stephen Curry', team: 'GSW', position: 'PG', points: 27.8, value: 62 },
+    { id: 3, name: 'Kevin Durant', team: 'PHX', position: 'PF', points: 29.3, value: 63 },
+  ]);
+
+  const [teams] = useState([
+    { id: 1, name: 'Lakers', value: 95, players: 8, keyPlayers: ['LeBron James', 'Anthony Davis'] },
+    { id: 2, name: 'Warriors', value: 92, players: 9, keyPlayers: ['Stephen Curry', 'Klay Thompson'] },
+    { id: 3, name: 'Celtics', value: 96, players: 10, keyPlayers: ['Jayson Tatum', 'Jaylen Brown'] },
+  ]);
+
+  const renderPlayerItem = ({ item }) => (
+    <TouchableOpacity style={styles.playerCard}>
+      <View style={styles.playerHeader}>
+        <Text style={styles.playerName}>{item.name}</Text>
+        <View style={styles.positionBadge}>
+          <Text style={styles.positionText}>{item.position}</Text>
+        </View>
+      </View>
+      <View style={styles.playerDetails}>
+        <Text style={styles.teamText}>{item.team}</Text>
+        <View style={styles.statsContainer}>
+          <Text style={styles.statsText}>{item.points} PPG</Text>
+          <Text style={styles.valueText}>Value: ${item.value}M</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView>
+        <View style={styles.header}>
+          <Text style={styles.title}>Fantasy Dashboard</Text>
+          <Text style={styles.subtitle}>Build your ultimate team</Text>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Top Players</Text>
+          <FlatList
+            data={players}
+            renderItem={renderPlayerItem}
+            keyExtractor={(item) => item.id.toString()}
+            scrollEnabled={false}
+          />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Top Teams</Text>
+          {teams.map((team) => (
+            <View key={team.id} style={styles.teamCard}>
+              <View style={styles.teamHeader}>
+                <Text style={styles.teamName}>{team.name}</Text>
+                <Text style={styles.teamValue}>${team.value}M</Text>
+              </View>
+              <Text style={styles.teamPlayers}>{team.players} players</Text>
+              <Text style={styles.keyPlayers}>Key Players: {team.keyPlayers.join(', ')}</Text>
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  header: {
+    padding: 20,
+    backgroundColor: '#1e3a8a',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#d1d5db',
+    marginTop: 5,
+  },
+  section: {
+    padding: 15,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1e3a8a',
+    marginBottom: 10,
+  },
+  playerCard: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  playerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  playerName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  positionBadge: {
+    backgroundColor: '#1e3a8a',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  positionText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  playerDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  teamText: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    gap: 15,
+  },
+  statsText: {
+    fontSize: 14,
+    color: '#059669',
+    fontWeight: '600',
+  },
+  valueText: {
+    fontSize: 14,
+    color: '#7c3aed',
+    fontWeight: '600',
+  },
+  teamCard: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  teamHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  teamName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  teamValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#059669',
+  },
+  teamPlayers: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  keyPlayers: {
+    fontSize: 14,
+    color: '#1f2937',
+    marginTop: 5,
+  },
+});
