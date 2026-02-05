@@ -1,4 +1,4 @@
-// src/hooks/useSportsData.js - COMPLETE WITH NHL DATA (correct case)
+// src/hooks/useSportsData.js - COMPLETE MERGED VERSION
 import { useState, useEffect, useCallback } from 'react';
 
 // Get API URL from environment variable or use default
@@ -16,6 +16,7 @@ const getApiBaseUrl = () => {
 
 import Config from '../config';
 
+// 🆕 ADDED: API endpoints configuration from Subject 1
 const API_CONFIG = {
   baseURL: Config.API_BASE_URL || getApiBaseUrl(),
   endpoints: {
@@ -39,10 +40,116 @@ const API_CONFIG = {
     },
     news: '/news/latest',
     picks: '/picks/daily',
+    // 🆕 ADDED: New endpoints from Subject 1
+    prizePicksSelections: '/prizepicks/selections',
+    sportsWire: '/sports-wire',
+    dailyPicks: '/picks/daily',
+    advancedAnalytics: '/analytics/advanced',
+    parlaySuggestions: '/parlay/suggestions',
+    kalshiPredictions: '/kalshi/predictions',
+    predictionsHistory: '/predictions/history',
+    fantasyPlayers: '/fantasy/players',
+    playerTrends: '/player/trends',
+    systemStatus: '/system/status'
   }
 };
 
 console.log('🔧 API Base URL:', API_CONFIG.baseURL);
+
+// 🆕 ADDED: Generic fetch hook from Subject 1
+const useApiData = (endpoint, initialData, params) => {
+  const [data, setData] = useState(initialData);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        let url = `${API_CONFIG.baseURL}${endpoint}`;
+        
+        // Add query parameters if provided
+        if (params) {
+          const queryString = new URLSearchParams(params).toString();
+          url += `?${queryString}`;
+        }
+        
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const result = await response.json();
+        
+        // Handle different API response structures
+        if (result.data !== undefined) {
+          setData(result.data);
+        } else if (Array.isArray(result)) {
+          setData(result);
+        } else {
+          setData(result);
+        }
+        
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error');
+        console.error(`Error fetching ${endpoint}:`, err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [endpoint, JSON.stringify(params)]); // Re-run when params change
+
+  return { 
+    data, 
+    loading, 
+    error, 
+    refetch: () => {
+      // Trigger re-fetch by updating the params slightly
+      const newParams = params ? { ...params, _t: Date.now().toString() } : { _t: Date.now().toString() };
+      return fetch(`${API_CONFIG.baseURL}${endpoint}?${new URLSearchParams(newParams).toString()}`)
+        .then(res => res.json())
+        .then(result => {
+          if (result.data !== undefined) setData(result.data);
+          else setData(result);
+          return result;
+        });
+    } 
+  };
+};
+
+// 🆕 ADDED: Hook exports from Subject 1
+export const usePrizePicks = (sport = 'nba') => 
+  useApiData(API_CONFIG.endpoints.prizePicksSelections, [], { sport });
+
+export const useSportsWire = (sport = 'nba') => 
+  useApiData(API_CONFIG.endpoints.sportsWire, [], { sport });
+
+export const useDailyPicks = () => 
+  useApiData(API_CONFIG.endpoints.dailyPicks, []);
+
+export const useAdvancedAnalytics = () => 
+  useApiData(API_CONFIG.endpoints.advancedAnalytics, {});
+
+export const useParlaySuggestions = () => 
+  useApiData(API_CONFIG.endpoints.parlaySuggestions, []);
+
+export const useKalshiPredictions = () => 
+  useApiData(API_CONFIG.endpoints.kalshiPredictions, []);
+
+export const usePredictionsHistory = () => 
+  useApiData(API_CONFIG.endpoints.predictionsHistory, []);
+
+export const useFantasyPlayers = () => 
+  useApiData(API_CONFIG.endpoints.fantasyPlayers, []);
+
+export const usePlayerTrends = (playerName) => {
+  const params = playerName ? { player: playerName } : undefined;
+  return useApiData(API_CONFIG.endpoints.playerTrends, [], params);
+};
+
+export const useSystemStatus = () => 
+  useApiData(API_CONFIG.endpoints.systemStatus, {});
 
 // Development data
 const mockNBA = {
