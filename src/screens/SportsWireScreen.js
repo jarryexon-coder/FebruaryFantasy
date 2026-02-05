@@ -1,3 +1,4 @@
+// src/screens/SportsWireScreen.js - UPDATED WITH WEB APP FUNCTIONALITY
 import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -25,314 +26,321 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logAnalyticsEvent, logScreenView } from '../services/firebase';
 
 // Import services and hooks
-import apiService from '../services/api';  // No curly braces!
-import { useSportsData } from '../hooks/useSportsData';
-import { useAnalytics } from '../hooks/useAnalytics';
+import apiService from '../services/api';
 import SearchBar from '../components/SearchBar';
 import { useSearch } from '../providers/SearchProvider';
-import useDailyLocks from '../hooks/useDailyLocks';
 
 // Import navigation helper
 import { useAppNavigation } from '../navigation/NavigationHelper';
 
 const { width } = Dimensions.get('window');
 
-const SportsNewsHub = () => {
-  const [news, setNews] = useState({});
+// Define types for TypeScript-like structure
+const SPORT_COLORS = {
+  NBA: '#ef4444',
+  NFL: '#3b82f6',
+  NHL: '#1e40af',
+  MLB: '#10b981'
+};
+
+// Mock data for fallback (matches web app structure)
+const MOCK_PLAYER_PROPS = Array.from({ length: 12 }, (_, i) => {
+  const sports = ['NBA', 'NFL', 'MLB', 'NHL'];
+  const statTypes = ['Points', 'Rebounds', 'Assists', 'Yards', 'Touchdowns', 'Home Runs'];
+  const randomSport = sports[Math.floor(Math.random() * sports.length)];
+  const randomStat = statTypes[Math.floor(Math.random() * statTypes.length)];
+  
+  return {
+    id: i + 1,
+    playerName: `Player ${i + 1}`,
+    team: ['Lakers', 'Warriors', 'Chiefs', 'Yankees', 'Bruins'][Math.floor(Math.random() * 5)],
+    sport: randomSport,
+    propType: randomStat,
+    line: Math.random() > 0.5 ? 'Over ' + (Math.floor(Math.random() * 30) + 10) : 'Under ' + (Math.floor(Math.random() * 30) + 10),
+    odds: Math.random() > 0.5 ? '+150' : '-120',
+    impliedProbability: Math.floor(Math.random() * 40) + 50,
+    matchup: 'Home vs. Away',
+    time: `${Math.floor(Math.random() * 24)}h ago`,
+    confidence: Math.floor(Math.random() * 40) + 60,
+    isBookmarked: Math.random() > 0.5,
+    aiInsights: [
+      'Trending in the right direction',
+      'Matchup favors this prop',
+      'Historical performance strong'
+    ]
+  };
+});
+
+const MOCK_TRENDING_PROPS = [
+  {
+    id: 1,
+    playerName: 'LeBron James',
+    team: 'Lakers',
+    sport: 'NBA',
+    propType: 'Points',
+    line: 'Over 25.5',
+    odds: '+110',
+    impliedProbability: 65,
+    matchup: 'LAL @ GSW',
+    time: '1h ago',
+    confidence: 85,
+    trending: true,
+    emoji: '🏀',
+    type: 'HOT'
+  },
+  {
+    id: 2,
+    playerName: 'Patrick Mahomes',
+    team: 'Chiefs',
+    sport: 'NFL',
+    propType: 'Passing Yards',
+    line: 'Over 285.5',
+    odds: '-130',
+    impliedProbability: 72,
+    matchup: 'KC @ BUF',
+    time: '2h ago',
+    confidence: 78,
+    trending: true,
+    emoji: '🏈',
+    type: 'VALUE'
+  },
+  {
+    id: 3,
+    playerName: 'Connor McDavid',
+    team: 'Oilers',
+    sport: 'NHL',
+    propType: 'Points',
+    line: 'Over 1.5',
+    odds: '+150',
+    impliedProbability: 58,
+    matchup: 'EDM @ COL',
+    time: '4h ago',
+    confidence: 82,
+    trending: true,
+    emoji: '🏒',
+    type: 'TRENDING'
+  }
+];
+
+// Custom hook for sports wire data (simulating web app's useSportsWire hook)
+const useSportsWire = () => {
+  const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        
+        // Try to fetch from API first
+        const apiBase = process.env.EXPO_PUBLIC_API_BASE || 'https://pleasing-determination-production.up.railway.app';
+        const response = await fetch(`${apiBase}/api/sports-wire`);
+        const result = await response.json();
+        
+        if (result.success && result.props) {
+          console.log('✅ Using REAL sports wire data:', result.props.length, 'props');
+          setData(result.props);
+          
+          // Store for debugging
+          await AsyncStorage.setItem('sports_wire_data', JSON.stringify({
+            data: result.props,
+            timestamp: new Date().toISOString(),
+            source: 'api'
+          }));
+        } else {
+          throw new Error(result.message || 'Failed to load sports wire data');
+        }
+      } catch (err) {
+        console.log('❌ Sports wire API failed, using mock data:', err.message);
+        setError(err.message);
+        setData(MOCK_PLAYER_PROPS);
+        
+        // Store mock data for debugging
+        await AsyncStorage.setItem('sports_wire_data', JSON.stringify({
+          data: MOCK_PLAYER_PROPS,
+          timestamp: new Date().toISOString(),
+          source: 'mock',
+          error: err.message
+        }));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  return { data, loading, error };
+};
+
+const SportsWireScreen = () => {
+  const navigation = useAppNavigation();
+  const { searchHistory, addToSearchHistory } = useSearch();
+  
+  // Use the custom hook for data fetching (matches web app pattern)
+  const { data: playerProps, loading, error } = useSportsWire();
+  
+  const [selectedCategory, setSelectedCategory] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState('beat-writers');
-  const [page, setPage] = useState(1);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredTrending, setFilteredTrending] = useState([]);
   const [trendingFilter, setTrendingFilter] = useState('all');
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
-  const [articleSentiment, setArticleSentiment] = useState({});
-  const [readingTimeData, setReadingTimeData] = useState({});
-  const flatListRef = useRef(null);
-  
-  // Use sports data hook for real-time data
-  const { data: sportsData, refreshAllData } = useSportsData({
-    autoRefresh: true,
-    refreshInterval: 60000
-  });
+  const [filteredProps, setFilteredProps] = useState([]);
+  const [bookmarked, setBookmarked] = useState([]);
+  const [trendingProps, setTrendingProps] = useState(MOCK_TRENDING_PROPS);
   
   const categories = [
-    { id: 'beat-writers', name: 'Beat Writers', icon: 'newspaper', color: '#3b82f6' },
-    { id: 'injuries', name: 'Injury News', icon: 'medical', color: '#ef4444' },
-    { id: 'rosters', name: 'Rosters', icon: 'people', color: '#8b5cf6' },
-    { id: 'analytics', name: 'Analytics', icon: 'analytics', color: '#10b981' },
-    { id: 'trades', name: 'Trades', icon: 'swap-horizontal', color: '#f59e0b' },
-    { id: 'draft', name: 'Draft', icon: 'school', color: '#ec4899' },
-    { id: 'free-agency', name: 'Free Agency', icon: 'briefcase', color: '#6366f1' },
-    { id: 'advanced-stats', name: 'Advanced Stats', icon: 'stats-chart', color: '#14b8a6' },
+    { id: 'all', name: 'All Props', icon: 'newspaper', color: '#3b82f6' },
+    { id: 'NBA', name: 'NBA', icon: 'basketball', color: '#ef4444' },
+    { id: 'NFL', name: 'NFL', icon: 'american-football', color: '#3b82f6' },
+    { id: 'MLB', name: 'MLB', icon: 'baseball', color: '#10b981' },
+    { id: 'NHL', name: 'NHL', icon: 'ice-cream', color: '#1e40af' },
+    { id: 'trending', name: 'Trending', icon: 'trending-up', color: '#ec4899' },
+    { id: 'value', name: 'Value Bets', icon: 'analytics', color: '#10b981' },
+    { id: 'high-confidence', name: 'High Confidence', icon: 'sparkles', color: '#f59e0b' },
   ];
-
-  // New analytics metrics
-  const [analyticsMetrics, setAnalyticsMetrics] = useState({
-    totalArticles: 0,
-    trendingScore: 0,
-    engagementRate: 0,
-    avgReadingTime: 0,
-    sentimentScore: 0,
-    hotTopics: []
-  });
 
   const trendingFilters = [
     { id: 'all', name: 'All' },
-    { id: 'analytics', name: 'Analytics' },
-    { id: 'injuries', name: 'Injuries' },
-    { id: 'trades', name: 'Trades' },
-    { id: 'breaking', name: 'Breaking' },
-    { id: 'high-engagement', name: 'High Engagement' },
+    { id: 'NBA', name: 'NBA' },
+    { id: 'NFL', name: 'NFL' },
+    { id: 'MLB', name: 'MLB' },
+    { id: 'NHL', name: 'NHL' },
+    { id: 'high-confidence', name: 'High Confidence' },
   ];
 
-  // Enhanced trending stories with analytics data
-  const [trendingStories, setTrendingStories] = useState([
-    {
-      id: 1,
-      title: 'Advanced Metrics: Which Teams Are Over/Underperforming?',
-      category: 'analytics',
-      time: '1h ago',
-      views: '18.2K',
-      trending: true,
-      image: '📊',
-      type: 'ANALYSIS',
-      writer: 'Sarah Johnson',
-      sport: 'NBA',
-      sentiment: 'positive',
-      engagement: 92,
-      readingTime: '4 min',
-      aiInsights: ['High statistical significance', '95% confidence interval', '5 key metrics analyzed']
-    },
-    {
-      id: 2,
-      title: 'Injury Report: Key Players Sidelined This Week',
-      category: 'injuries',
-      time: '2h ago',
-      views: '24.5K',
-      trending: true,
-      image: '🏥',
-      type: 'BREAKING',
-      writer: 'Team Doctors',
-      sport: 'NFL',
-      sentiment: 'negative',
-      engagement: 88,
-      readingTime: '3 min',
-      aiInsights: ['Affects 3 team lineups', 'Average recovery: 14 days', 'Injury correlation: 0.87']
-    },
-    {
-      id: 3,
-      title: 'Trade Rumors: Latest from League Insiders',
-      category: 'trades',
-      time: '4h ago',
-      views: '15.7K',
-      trending: true,
-      image: '📝',
-      type: 'RUMOR',
-      writer: 'Multiple Sources',
-      sport: 'NBA',
-      sentiment: 'neutral',
-      engagement: 76,
-      readingTime: '5 min',
-      aiInsights: ['Trade probability: 65%', 'Salary cap impact: $12M', 'Team value change: +8%']
-    },
-    {
-      id: 4,
-      title: 'Statistical Breakthrough: New Analytics Model Predicts Playoff Outcomes',
-      category: 'analytics',
-      time: '6h ago',
-      views: '22.3K',
-      trending: true,
-      image: '📈',
-      type: 'RESEARCH',
-      writer: 'Dr. Michael Chen',
-      sport: 'All',
-      sentiment: 'positive',
-      engagement: 95,
-      readingTime: '7 min',
-      aiInsights: ['Model accuracy: 87%', 'Trained on 50K+ games', 'Predicts with 82% confidence']
-    },
-  ]);
+  const analyticsMetrics = {
+    totalProps: playerProps.length || 128,
+    trendingScore: 78,
+    hitRate: 65,
+    avgConfidence: 68,
+    valueScore: 72,
+    hotSports: [
+      { sport: 'NBA', count: 42 },
+      { sport: 'NFL', count: 28 },
+      { sport: 'MLB', count: 19 }
+    ]
+  };
 
-  const getCategoryColors = (category) => {
-    switch(category) {
-      case 'analytics': return ['#0f766e', '#14b8a6'];
-      case 'injuries': return ['#7c2d12', '#ea580c'];
-      case 'trades': return ['#3730a3', '#4f46e5'];
-      case 'rosters': return ['#1d4ed8', '#3b82f6'];
-      case 'draft': return ['#7c2d12', '#ea580c'];
-      default: return ['#1e293b', '#334155'];
+  // Filter props when category or search changes (matches web app logic)
+  useEffect(() => {
+    if (!playerProps || playerProps.length === 0) {
+      setFilteredProps(MOCK_PLAYER_PROPS);
+      return;
     }
-  };
 
-  const getCategoryName = (category) => {
-    return categories.find(c => c.id === category)?.name || category.toUpperCase();
-  };
-
-  const getSentimentColor = (sentiment) => {
-    switch(sentiment) {
-      case 'positive': return '#10b981';
-      case 'negative': return '#ef4444';
-      case 'neutral': return '#6b7280';
-      default: return '#6b7280';
-    }
-  };
-
-  // Development data
-  const mockNewsArticles = Array.from({ length: 50 }, (_, i) => {
-    const categoriesList = ['analytics', 'injuries', 'trades', 'rosters', 'draft'];
-    const randomCategory = categoriesList[Math.floor(Math.random() * categoriesList.length)];
+    let filtered = [...playerProps];
     
-    return {
-      id: i + 1,
-      title: `Sports News Article ${i + 1}: Breaking Update on Major Event`,
-      category: randomCategory,
-      excerpt: 'This is a detailed excerpt about the latest developments in sports analytics...',
-      time: `${Math.floor(Math.random() * 24)}h ago`,
-      views: `${Math.floor(Math.random() * 20) + 5}K`,
-      writer: ['Sarah Johnson', 'Mike Smith', 'Alex Rodriguez'][Math.floor(Math.random() * 3)],
-      isBookmarked: Math.random() > 0.5,
-      sentiment: ['positive', 'neutral', 'negative'][Math.floor(Math.random() * 3)],
-      engagement: Math.floor(Math.random() * 30) + 70,
-      readingTime: `${Math.floor(Math.random() * 8) + 2} min`,
-      aiScore: Math.floor(Math.random() * 40) + 60,
-      metrics: {
-        socialShares: Math.floor(Math.random() * 1000),
-        comments: Math.floor(Math.random() * 500),
-        saves: Math.floor(Math.random() * 200)
+    // Filter by category
+    if (selectedCategory !== 'all') {
+      if (selectedCategory === 'trending') {
+        filtered = filtered.filter(prop => prop.confidence > 75);
+      } else if (selectedCategory === 'value') {
+        filtered = filtered.filter(prop => {
+          const oddsValue = parseInt(prop.odds);
+          return oddsValue > 0 || prop.impliedProbability > 60;
+        });
+      } else if (selectedCategory === 'high-confidence') {
+        filtered = filtered.filter(prop => prop.confidence > 80);
+      } else {
+        filtered = filtered.filter(prop => prop.sport === selectedCategory);
       }
+    }
+    
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(prop => 
+        prop.playerName.toLowerCase().includes(query) ||
+        (prop.team && prop.team.toLowerCase().includes(query)) ||
+        prop.propType.toLowerCase().includes(query)
+      );
+    }
+    
+    setFilteredProps(filtered);
+  }, [selectedCategory, searchQuery, playerProps]);
+
+  const getOddsColor = (odds) => {
+    if (odds.startsWith('+')) return '#10b981'; // Positive odds = green
+    if (odds.startsWith('-')) return '#ef4444'; // Negative odds = red
+    return '#6b7280';
+  };
+
+  const getConfidenceColor = (confidence) => {
+    if (confidence >= 80) return '#10b981';
+    if (confidence >= 60) return '#f59e0b';
+    return '#ef4444';
+  };
+
+  const getEmoji = (sport) => {
+    const emojiMap = {
+      'NBA': '🏀',
+      'NFL': '🏈',
+      'MLB': '⚾',
+      'NHL': '🏒',
+      'SOCCER': '⚽',
+      'TENNIS': '🎾'
     };
-  });
-
-  const [articles, setArticles] = useState([]);
-
-  const calculateAnalytics = (articlesData) => {
-    if (!articlesData.length) return;
     
-    const totalArticles = articlesData.length;
-    const avgEngagement = articlesData.reduce((sum, article) => sum + article.engagement, 0) / totalArticles;
-    const sentimentBreakdown = articlesData.reduce((acc, article) => {
-      acc[article.sentiment] = (acc[article.sentiment] || 0) + 1;
-      return acc;
-    }, {});
-    
-    // Calculate hot topics
-    const categoryCount = articlesData.reduce((acc, article) => {
-      acc[article.category] = (acc[article.category] || 0) + 1;
-      return acc;
-    }, {});
-    
-    const hotTopics = Object.entries(categoryCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([category, count]) => ({ category, count }));
-    
-    setAnalyticsMetrics({
-      totalArticles,
-      trendingScore: Math.floor(avgEngagement),
-      engagementRate: Math.floor((avgEngagement / 100) * 100),
-      avgReadingTime: Math.floor(Math.random() * 5) + 3,
-      sentimentScore: sentimentBreakdown.positive ? 
-        Math.floor((sentimentBreakdown.positive / totalArticles) * 100) : 0,
-      hotTopics
-    });
+    return emojiMap[sport] || '🎯';
   };
 
-  const loadData = async (loadMore = false) => {
+  const getSportColor = (sport) => {
+    return SPORT_COLORS[sport] || '#3b82f6';
+  };
+
+  const handleBookmark = (propId) => {
+    const numId = typeof propId === 'string' ? parseInt(propId) : propId;
+    
+    if (bookmarked.includes(numId)) {
+      setBookmarked(bookmarked.filter(id => id !== numId));
+    } else {
+      setBookmarked([...bookmarked, numId]);
+    }
+  };
+
+  const handleShare = async (prop) => {
     try {
-      if (loadMore) {
-        setLoadingMore(true);
-      } else {
-        setLoading(true);
-      }
-      
-      console.log('📰 Loading News data with analytics...');
-      
-      // Get real sports data from hook
-      const nbaNews = sportsData?.nba?.news || [];
-      const nflNews = sportsData?.nfl?.news || [];
-      
-      // Combine and process news data
-      const combinedNews = [...mockNewsArticles];
-      
-      if (!loadMore) {
-        setArticles(combinedNews.slice(0, 10));
-      } else {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        const newArticles = combinedNews.slice(articles.length, articles.length + 10);
-        setArticles(prev => [...prev, ...newArticles]);
-        if (articles.length + 10 >= combinedNews.length) {
-          setHasMore(false);
-        }
-      }
-      
-      // Calculate analytics
-      calculateAnalytics(combinedNews.slice(0, 20));
-      
-      // Set article sentiment data
-      const sentimentMap = {};
-      combinedNews.slice(0, 10).forEach(article => {
-        sentimentMap[article.id] = article.sentiment;
+      await Share.share({
+        message: `${prop.playerName} ${prop.propType}: ${prop.line} ${prop.odds}`,
+        title: `${prop.playerName} Player Prop`,
       });
-      setArticleSentiment(sentimentMap);
-      
     } catch (error) {
-      console.log('Error loading news:', error.message);
-      Alert.alert('Error', 'Failed to load news data');
+      console.log('Error sharing:', error);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    
+    try {
+      // Simulate refresh delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      logAnalyticsEvent('sports_wire_refresh', {
+        props_count: playerProps.length,
+        selected_category: selectedCategory,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.log('Refresh error:', error);
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
       setRefreshing(false);
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  useEffect(() => {
-    // Apply trending filter
-    if (trendingFilter === 'all') {
-      setFilteredTrending(trendingStories);
-    } else if (trendingFilter === 'breaking') {
-      setFilteredTrending(trendingStories.filter(story => story.type === 'BREAKING'));
-    } else if (trendingFilter === 'high-engagement') {
-      setFilteredTrending(trendingStories.filter(story => story.engagement > 85));
-    } else {
-      setFilteredTrending(trendingStories.filter(story => story.category === trendingFilter));
-    }
-  }, [trendingFilter]);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    setPage(1);
-    setHasMore(true);
-    await refreshAllData();
-    loadData();
-  };
-
-  const loadMore = () => {
-    if (!loadingMore && hasMore) {
-      setPage(prev => prev + 1);
-      loadData(true);
-    }
-  };
-
-  const shareArticle = async (article) => {
-    try {
-      await Share.share({
-        message: `${article.title}\n\nRead more on Sports Intelligence Hub`,
-        title: article.title,
-        url: 'https://sportsintelligence.app/article/' + article.id,
+  const handleSearchSubmit = async () => {
+    if (searchQuery.trim()) {
+      await addToSearchHistory(searchQuery.trim());
+      logAnalyticsEvent('sports_wire_search', {
+        search_query: searchQuery,
+        result_count: filteredProps.length,
       });
-    } catch (error) {
-      console.log('Error sharing:', error.message);
     }
   };
 
+  // Analytics Dashboard Modal (matches web app design)
   const renderAnalyticsModal = () => (
     <Modal
       animationType="slide"
@@ -346,7 +354,7 @@ const SportsNewsHub = () => {
             colors={['#1e40af', '#3b82f6']}
             style={styles.modalHeader}
           >
-            <Text style={styles.modalTitle}>SportsHub Analytics Dashboard</Text>
+            <Text style={styles.modalTitle}>SportsWire Analytics Dashboard</Text>
             <TouchableOpacity 
               onPress={() => setShowAnalyticsModal(false)}
               style={styles.modalCloseButton}
@@ -356,88 +364,74 @@ const SportsNewsHub = () => {
           </LinearGradient>
           
           <ScrollView style={styles.modalBody}>
-            <View style={styles.analyticsSection}>
-              <Text style={styles.sectionTitle}>📊 Performance Metrics</Text>
-              <View style={styles.metricsGrid}>
-                <View style={styles.metricCard}>
-                  <Text style={styles.metricValue}>{analyticsMetrics.totalArticles}</Text>
-                  <Text style={styles.metricLabel}>Total Articles</Text>
-                  <ProgressBar
-                    progress={Math.min(analyticsMetrics.totalArticles, 100)}
-                    height={6}
-                    backgroundColor="#3b82f6"
-                    style={{ width: 100 }}
-                  />
-                </View>
-                <View style={styles.metricCard}>
-                  <Text style={styles.metricValue}>{analyticsMetrics.trendingScore}%</Text>
-                  <Text style={styles.metricLabel}>Trending Score</Text>
-                  <ProgressBar
-                    progress={analyticsMetrics.trendingScore}
-                    height={6}
-                    backgroundColor="#10b981"
-                    style={{ width: 100 }}
-                  />
-                </View>
-                <View style={styles.metricCard}>
-                  <Text style={styles.metricValue}>{analyticsMetrics.engagementRate}%</Text>
-                  <Text style={styles.metricLabel}>Engagement Rate</Text>
-                  <ProgressBar
-                    progress={analyticsMetrics.engagementRate}
-                    height={6}
-                    backgroundColor="#8b5cf6"
-                    style={{ width: 100 }}
-                  />
-                </View>
-                <View style={styles.metricCard}>
-                  <Text style={styles.metricValue}>{analyticsMetrics.sentimentScore}%</Text>
-                  <Text style={styles.metricLabel}>Positive Sentiment</Text>
-                  <ProgressBar
-                    progress={analyticsMetrics.sentimentScore}
-                    height={6}
-                    backgroundColor="#f59e0b"
-                    style={{ width: 100 }}
-                  />
-                </View>
+            <Text style={styles.sectionTitle}>📊 Prop Performance Metrics</Text>
+            <View style={styles.metricsGrid}>
+              <View style={styles.metricCard}>
+                <Text style={styles.metricValue}>{analyticsMetrics.totalProps}</Text>
+                <Text style={styles.metricLabel}>Total Props</Text>
+                <ProgressBar
+                  progress={Math.min(analyticsMetrics.totalProps, 100)}
+                  height={6}
+                  backgroundColor="#3b82f6"
+                  style={{ width: 100 }}
+                />
+              </View>
+              <View style={styles.metricCard}>
+                <Text style={styles.metricValue}>{analyticsMetrics.hitRate}%</Text>
+                <Text style={styles.metricLabel}>Hit Rate</Text>
+                <ProgressBar
+                  progress={analyticsMetrics.hitRate}
+                  height={6}
+                  backgroundColor="#10b981"
+                  style={{ width: 100 }}
+                />
+              </View>
+              <View style={styles.metricCard}>
+                <Text style={styles.metricValue}>{analyticsMetrics.avgConfidence}%</Text>
+                <Text style={styles.metricLabel}>Avg Confidence</Text>
+                <ProgressBar
+                  progress={analyticsMetrics.avgConfidence}
+                  height={6}
+                  backgroundColor="#8b5cf6"
+                  style={{ width: 100 }}
+                />
+              </View>
+              <View style={styles.metricCard}>
+                <Text style={styles.metricValue}>{analyticsMetrics.valueScore}%</Text>
+                <Text style={styles.metricLabel}>Value Score</Text>
+                <ProgressBar
+                  progress={analyticsMetrics.valueScore}
+                  height={6}
+                  backgroundColor="#f59e0b"
+                  style={{ width: 100 }}
+                />
               </View>
             </View>
             
-            <View style={styles.analyticsSection}>
-              <Text style={styles.sectionTitle}>🔥 Hot Topics</Text>
-              {analyticsMetrics.hotTopics.map((topic, index) => (
-                <View key={index} style={styles.hotTopicItem}>
-                  <View style={styles.topicInfo}>
-                    <Text style={styles.topicName}>
-                      {getCategoryName(topic.category)}
-                    </Text>
-                    <Text style={styles.topicCount}>{topic.count} articles</Text>
+            <Text style={styles.sectionTitle}>🔥 Hot Sports</Text>
+            {analyticsMetrics.hotSports.map((sport, index) => {
+              const sportColor = getSportColor(sport.sport);
+              
+              return (
+                <View key={index} style={styles.hotSportItem}>
+                  <View style={styles.sportInfo}>
+                    <View style={[styles.sportIcon, { backgroundColor: sportColor }]}>
+                      <Text style={styles.sportIconText}>{getEmoji(sport.sport)}</Text>
+                    </View>
+                    <View style={styles.sportDetails}>
+                      <Text style={styles.sportName}>{sport.sport}</Text>
+                      <Text style={styles.sportCount}>{sport.count} props</Text>
+                    </View>
                   </View>
                   <ProgressBar
-                    progress={(topic.count / analyticsMetrics.totalArticles) * 100}
+                    progress={(sport.count / analyticsMetrics.totalProps) * 100}
                     height={8}
-                    backgroundColor={categories.find(c => c.id === topic.category)?.color || '#3b82f6'}
+                    backgroundColor={sportColor}
                     style={{ width: 200 }}
                   />
                 </View>
-              ))}
-            </View>
-            
-            <View style={styles.analyticsSection}>
-              <Text style={styles.sectionTitle}>🎯 Sentiment Analysis</Text>
-              <View style={styles.sentimentChart}>
-                <View style={styles.sentimentBar}>
-                  <View style={[styles.sentimentFill, { 
-                    width: `${analyticsMetrics.sentimentScore}%`,
-                    backgroundColor: '#10b981'
-                  }]} />
-                </View>
-                <View style={styles.sentimentLabels}>
-                  <Text style={styles.sentimentLabel}>Negative</Text>
-                  <Text style={styles.sentimentLabel}>Neutral</Text>
-                  <Text style={styles.sentimentLabel}>Positive</Text>
-                </View>
-              </View>
-            </View>
+              );
+            })}
           </ScrollView>
           
           <View style={styles.modalFooter}>
@@ -453,83 +447,289 @@ const SportsNewsHub = () => {
     </Modal>
   );
 
+  // Render trending card (matches web app design)
+  const renderTrendingCard = (prop) => {
+    const oddsColor = getOddsColor(prop.odds);
+    const confidenceColor = getConfidenceColor(prop.confidence);
+    const sportColor = getSportColor(prop.sport);
+    
+    return (
+      <View key={prop.id} style={styles.trendingCard}>
+        <LinearGradient
+          colors={[sportColor, `${sportColor}DD`]}
+          style={styles.trendingImage}
+        >
+          <Text style={styles.trendingEmoji}>{prop.emoji || getEmoji(prop.sport)}</Text>
+          {prop.type && (
+            <View style={styles.typeBadge}>
+              <Text style={styles.typeText}>{prop.type}</Text>
+            </View>
+          )}
+          <View style={[styles.confidenceBadge, { backgroundColor: confidenceColor }]}>
+            <Text style={styles.confidenceBadgeText}>{prop.confidence}%</Text>
+          </View>
+        </LinearGradient>
+        
+        <View style={styles.trendingContent}>
+          <View style={styles.trendingHeader}>
+            <Ionicons name="person" size={12} color="#6b7280" />
+            <Text style={styles.trendingPlayerName}>{prop.playerName}</Text>
+            <View style={[styles.sportBadge, { backgroundColor: `${sportColor}20` }]}>
+              <Text style={[styles.sportBadgeText, { color: sportColor }]}>{prop.sport}</Text>
+            </View>
+          </View>
+          
+          <Text style={styles.trendingTitle}>{prop.propType}: {prop.line}</Text>
+          
+          <View style={styles.trendingInfo}>
+            <Text style={styles.trendingTeam}>{prop.team}</Text>
+            <Text style={[styles.trendingOdds, { color: oddsColor }]}>{prop.odds}</Text>
+          </View>
+          
+          <Text style={styles.trendingMatchup}>{prop.matchup}</Text>
+          
+          <View style={styles.trendingFooter}>
+            <Text style={styles.trendingTime}>{prop.time}</Text>
+            <View style={styles.probabilityBadge}>
+              <Text style={styles.probabilityText}>{prop.impliedProbability}%</Text>
+            </View>
+          </View>
+          
+          <View style={styles.trendingActions}>
+            <TouchableOpacity 
+              style={styles.trendingActionButton}
+              onPress={() => handleShare(prop)}
+            >
+              <Ionicons name="share-outline" size={16} color="#6b7280" />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.trendingActionButton}
+              onPress={() => Alert.alert('AI Insights', prop.aiInsights?.join('\n') || 'No AI insights available')}
+            >
+              <Ionicons name="sparkles" size={16} color="#8b5cf6" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.trendingActionButton}>
+              <Ionicons name="bookmark-outline" size={16} color="#6b7280" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  // Render player prop card (matches web app design)
+  const renderPropCard = (prop) => {
+    const oddsColor = getOddsColor(prop.odds);
+    const confidenceColor = getConfidenceColor(prop.confidence);
+    const sportColor = getSportColor(prop.sport);
+    const isBookmarked = bookmarked.includes(typeof prop.id === 'string' ? parseInt(prop.id) : prop.id);
+    
+    return (
+      <View key={prop.id} style={styles.propCard}>
+        <View style={styles.propHeader}>
+          <View style={styles.propCategories}>
+            <View style={[styles.categoryBadge, { backgroundColor: `${sportColor}20` }]}>
+              <Text style={[styles.categoryText, { color: sportColor }]}>{prop.sport}</Text>
+            </View>
+            <View style={[styles.categoryBadge, { backgroundColor: '#f8fafc' }]}>
+              <Text style={[styles.categoryText, { color: '#64748b' }]}>{prop.propType}</Text>
+            </View>
+          </View>
+          <Text style={styles.propTime}>{prop.time}</Text>
+        </View>
+        
+        <View style={styles.propPlayerInfo}>
+          <View style={[styles.playerAvatar, { backgroundColor: sportColor }]}>
+            <Text style={styles.playerAvatarText}>{prop.playerName.charAt(0)}</Text>
+          </View>
+          <View style={styles.playerDetails}>
+            <Text style={styles.playerName}>{prop.playerName}</Text>
+            <Text style={styles.playerTeam}>{prop.team} • {prop.matchup}</Text>
+          </View>
+        </View>
+        
+        <View style={styles.propLineCard}>
+          <View style={styles.propLineInfo}>
+            <Text style={styles.propLineLabel}>Prop Line</Text>
+            <Text style={styles.propLineValue}>{prop.line}</Text>
+          </View>
+          <View style={styles.propOddsInfo}>
+            <Text style={styles.propLineLabel}>Odds</Text>
+            <Text style={[styles.propLineValue, { color: oddsColor }]}>{prop.odds}</Text>
+          </View>
+        </View>
+        
+        <View style={styles.propMetrics}>
+          <View style={styles.metricItem}>
+            <View style={[styles.circularProgressContainer, { borderColor: confidenceColor }]}>
+              <Text style={[styles.circularProgressText, { color: confidenceColor }]}>{prop.confidence}%</Text>
+            </View>
+            <Text style={styles.metricLabel}>Confidence</Text>
+          </View>
+          
+          <View style={styles.metricItem}>
+            <View style={[styles.circularProgressContainer, { borderColor: '#8b5cf6' }]}>
+              <Text style={[styles.circularProgressText, { color: '#8b5cf6' }]}>{prop.impliedProbability}%</Text>
+            </View>
+            <Text style={styles.metricLabel}>Implied Prob</Text>
+          </View>
+          
+          <View style={styles.metricItem}>
+            <View style={styles.sportEmojiContainer}>
+              <Text style={styles.sportEmoji}>{getEmoji(prop.sport)}</Text>
+              <Text style={styles.sportNameText}>{prop.sport}</Text>
+            </View>
+            <Text style={styles.metricLabel}>Sport</Text>
+          </View>
+        </View>
+        
+        {prop.aiInsights && prop.aiInsights.length > 0 && (
+          <View style={styles.aiInsightsContainer}>
+            <Text style={styles.aiInsightsTitle}>AI Insights</Text>
+            {prop.aiInsights.map((insight, idx) => (
+              <View key={idx} style={styles.aiInsightItem}>
+                <Ionicons name="sparkles" size={12} color="#8b5cf6" />
+                <Text style={styles.aiInsightText}>{insight}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+        
+        <View style={styles.propActions}>
+          <TouchableOpacity 
+            style={[styles.trackButton, { backgroundColor: oddsColor }]}
+            onPress={() => Alert.alert('Tracking', 'Prop added to tracked props')}
+          >
+            <Text style={styles.trackButtonText}>Track Prop</Text>
+          </TouchableOpacity>
+          
+          <View style={styles.actionButtons}>
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => handleShare(prop)}
+            >
+              <Ionicons name="share-outline" size={20} color="#6b7280" />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => handleBookmark(prop.id)}
+            >
+              <Ionicons 
+                name={isBookmarked ? "bookmark" : "bookmark-outline"} 
+                size={20} 
+                color={isBookmarked ? "#3b82f6" : "#6b7280"} 
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   const renderHeader = () => (
     <LinearGradient
       colors={['#1e40af', '#3b82f6']}
       style={styles.header}
     >
       <View style={styles.headerContent}>
-        <Text style={styles.title}>SportsHub</Text>
-        <Text style={styles.subtitle}>Beat writers, analytics & roster insights</Text>
-        <View style={styles.statsRow}>
-          <TouchableOpacity 
-            style={styles.stat}
-            onPress={() => setShowAnalyticsModal(true)}
-          >
-            <Ionicons name="analytics" size={14} color="rgba(255,255,255,0.8)" />
-            <Text style={styles.statText}>Advanced Analytics</Text>
-          </TouchableOpacity>
-          <View style={styles.stat}>
-            <Ionicons name="person" size={14} color="rgba(255,255,255,0.8)" />
-            <Text style={styles.statText}>Beat Writer Reports</Text>
-          </View>
-          <View style={styles.stat}>
-            <Ionicons name="time" size={14} color="rgba(255,255,255,0.8)" />
-            <Text style={styles.statText}>Real-time Updates</Text>
-          </View>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        
+        <View style={styles.headerMain}>
+          <Text style={styles.title}>SportsWire ({playerProps.length} props)</Text>
+          <Text style={styles.subtitle}>Player props, odds & analytics insights</Text>
         </View>
+        
+        <TouchableOpacity 
+          style={styles.refreshButton}
+          onPress={handleRefresh}
+          disabled={refreshing}
+        >
+          <Ionicons 
+            name="time" 
+            size={20} 
+            color={refreshing ? "#94a3b8" : "#fff"} 
+          />
+        </TouchableOpacity>
+      </View>
+      
+      <View style={styles.headerButtons}>
+        <TouchableOpacity 
+          style={styles.headerActionButton}
+          onPress={() => setShowAnalyticsModal(true)}
+        >
+          <Ionicons name="analytics" size={16} color="white" />
+          <Text style={styles.headerActionText}>Prop Analytics</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.headerActionButton}
+          onPress={() => {
+            // Filter to show trending props
+            setSelectedCategory('trending');
+          }}
+        >
+          <Ionicons name="trending-up" size={16} color="white" />
+          <Text style={styles.headerActionText}>Trending Props</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.headerActionButton}
+          onPress={() => Alert.alert('AI Insights', 'AI-powered prop analysis')}
+        >
+          <Ionicons name="sparkles" size={16} color="white" />
+          <Text style={styles.headerActionText}>AI Insights</Text>
+        </TouchableOpacity>
       </View>
     </LinearGradient>
   );
 
   const renderSearchBar = () => (
     <View style={styles.searchContainer}>
-      <Ionicons name="search" size={20} color="#6b7280" />
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Search articles, teams, players..."
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-        placeholderTextColor="#9ca3af"
-      />
+      <View style={styles.searchInputContainer}>
+        <Ionicons name="search" size={20} color="#6b7280" />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search players, teams, props..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          onSubmitEditing={handleSearchSubmit}
+          placeholderTextColor="#9ca3af"
+        />
+        {searchQuery && (
+          <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <Ionicons name="close-circle" size={20} color="#6b7280" />
+          </TouchableOpacity>
+        )}
+      </View>
       <TouchableOpacity 
-        style={styles.analyticsButton}
+        style={styles.searchAnalyticsButton}
         onPress={() => setShowAnalyticsModal(true)}
       >
-        <Ionicons name="stats-chart" size={20} color="#3b82f6" />
+        <Ionicons name="stats-chart" size={20} color="#fff" />
       </TouchableOpacity>
-      {searchQuery.length > 0 && (
-        <TouchableOpacity onPress={() => setSearchQuery('')}>
-          <Ionicons name="close-circle" size={20} color="#6b7280" />
-        </TouchableOpacity>
-      )}
     </View>
   );
 
   const renderCategoryTabs = () => (
-    <View>
+    <View style={styles.categoriesContainer}>
       <ScrollView 
         horizontal 
         showsHorizontalScrollIndicator={false}
         style={styles.categoriesScroll}
-        contentContainerStyle={styles.categoriesContent}
       >
         {categories.map((category) => (
           <TouchableOpacity
             key={category.id}
             style={[
               styles.categoryTab,
-              selectedCategory === category.id && styles.activeCategoryTab,
-              { borderLeftColor: category.color }
+              selectedCategory === category.id && styles.activeCategoryTab
             ]}
-            onPress={() => {
-              setSelectedCategory(category.id);
-              setPage(1);
-              setHasMore(true);
-              if (flatListRef.current) {
-                flatListRef.current.scrollToOffset({ offset: 0, animated: true });
-              }
-            }}
+            onPress={() => setSelectedCategory(category.id)}
           >
             <Ionicons 
               name={category.icon} 
@@ -545,14 +745,15 @@ const SportsNewsHub = () => {
           </TouchableOpacity>
         ))}
       </ScrollView>
+      
       <View style={styles.categoryIndicator}>
         <Text style={styles.categoryIndicatorText}>
-          {categories.find(c => c.id === selectedCategory)?.name} • {articles.length} articles
+          {categories.find(c => c.id === selectedCategory)?.name} • {filteredProps.length} props
         </Text>
         <TouchableOpacity style={styles.notificationBell}>
           <Ionicons name="notifications-outline" size={20} color="#3b82f6" />
           <View style={styles.notificationBadge}>
-            <Text style={styles.notificationCount}>{analyticsMetrics.totalArticles}</Text>
+            <Text style={styles.notificationCount}>{playerProps.length}</Text>
           </View>
         </TouchableOpacity>
       </View>
@@ -560,17 +761,17 @@ const SportsNewsHub = () => {
   );
 
   const renderTrendingSection = () => (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
+    <View style={styles.trendingSection}>
+      <View style={styles.trendingHeader}>
         <View>
-          <Text style={styles.sectionTitle}>📈 Trending Analysis</Text>
-          <Text style={styles.sectionSubtitle}>Most discussed stories with AI insights</Text>
+          <Text style={styles.trendingTitle}>📈 Trending Props</Text>
+          <Text style={styles.trendingSubtitle}>Most discussed props with AI insights</Text>
         </View>
         <TouchableOpacity 
-          style={styles.seeAllButton}
+          style={styles.viewAnalyticsButton}
           onPress={() => setShowAnalyticsModal(true)}
         >
-          <Text style={styles.seeAll}>View Analytics</Text>
+          <Text style={styles.viewAnalyticsText}>View Analytics</Text>
         </TouchableOpacity>
       </View>
       
@@ -599,309 +800,117 @@ const SportsNewsHub = () => {
         ))}
       </ScrollView>
       
+      {/* Trending Cards */}
       <ScrollView 
         horizontal 
         showsHorizontalScrollIndicator={false}
         style={styles.trendingScroll}
       >
-        {filteredTrending.map((story) => (
-          <TouchableOpacity 
-            key={story.id} 
-            style={styles.trendingCard}
-            onPress={() => {
-              Alert.alert('Article Analytics', 
-                `Engagement: ${story.engagement}%\n` +
-                `Reading Time: ${story.readingTime}\n` +
-                `AI Confidence: 87%\n\n` +
-                `Key Insights:\n${story.aiInsights.join('\n')}`
-              );
-            }}
-          >
-            <LinearGradient
-              colors={getCategoryColors(story.category)}
-              style={styles.trendingImage}
-            >
-              <Text style={styles.trendingEmoji}>{story.image}</Text>
-              <View style={styles.storyTypeBadge}>
-                <Text style={styles.storyTypeText}>{story.type}</Text>
-              </View>
-              <View style={[
-                styles.sentimentBadge,
-                { backgroundColor: getSentimentColor(story.sentiment) }
-              ]}>
-                <Ionicons 
-                  name={story.sentiment === 'positive' ? 'trending-up' : 
-                         story.sentiment === 'negative' ? 'trending-down' : 'remove'} 
-                  size={10} 
-                  color="white" 
-                />
-                <Text style={styles.sentimentBadgeText}>
-                  {story.sentiment.toUpperCase()}
-                </Text>
-              </View>
-            </LinearGradient>
-            <View style={styles.trendingContent}>
-              <View style={styles.writerInfo}>
-                <Ionicons name="person-circle" size={12} color="#6b7280" />
-                <Text style={styles.writerName}>{story.writer}</Text>
-                <View style={styles.sportTag}>
-                  <Text style={styles.sportTagText}>{story.sport}</Text>
-                </View>
-              </View>
-              <Text style={styles.trendingTitle} numberOfLines={2}>
-                {story.title}
-              </Text>
-              
-              {/* Analytics Metrics */}
-              <View style={styles.analyticsRow}>
-                <View style={styles.analyticsMetric}>
-                  <Ionicons name="eye" size={12} color="#9ca3af" />
-                  <Text style={styles.analyticsText}>{story.views}</Text>
-                </View>
-                <View style={styles.analyticsMetric}>
-                  <Ionicons name="time" size={12} color="#9ca3af" />
-                  <Text style={styles.analyticsText}>{story.readingTime}</Text>
-                </View>
-                <View style={styles.analyticsMetric}>
-                  <Ionicons name="trending-up" size={12} color="#10b981" />
-                  <Text style={styles.analyticsText}>{story.engagement}%</Text>
-                </View>
-              </View>
-              
-              <View style={styles.trendingFooter}>
-                <Text style={styles.trendingCategory}>{getCategoryName(story.category)}</Text>
-                <Text style={styles.trendingTime}>{story.time}</Text>
-              </View>
-              
-              <View style={styles.articleActions}>
-                <TouchableOpacity 
-                  style={styles.actionButton}
-                  onPress={() => shareArticle(story)}
-                >
-                  <Ionicons name="share-outline" size={14} color="#6b7280" />
-                  <Text style={styles.actionText}>Share</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.actionButton}
-                  onPress={() => Alert.alert('AI Insights', story.aiInsights.join('\n'))}
-                >
-                  <Ionicons name="sparkles" size={14} color="#8b5cf6" />
-                  <Text style={styles.actionText}>AI Insights</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton}>
-                  <Ionicons name="bookmark-outline" size={14} color="#6b7280" />
-                  <Text style={styles.actionText}>Save</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </TouchableOpacity>
-        ))}
+        {trendingProps.map(renderTrendingCard)}
       </ScrollView>
     </View>
   );
 
-  const renderArticleItem = ({ item, index }) => (
-    <TouchableOpacity 
-      style={[
-        styles.newsCard,
-        index === articles.length - 1 && styles.lastCard
-      ]}
-      onPress={() => {
-        Alert.alert('Article Analytics', 
-          `Engagement Rate: ${item.engagement}%\n` +
-          `AI Score: ${item.aiScore}/100\n` +
-          `Sentiment: ${item.sentiment.toUpperCase()}\n` +
-          `Reading Time: ${item.readingTime}`
-        );
-      }}
-    >
-      <View style={styles.newsHeader}>
-        <View style={[
-          styles.newsCategoryBadge,
-          { backgroundColor: categories.find(c => c.id === item.category)?.color + '20' }
-        ]}>
-          <Text style={[
-            styles.newsCategoryText,
-            { color: categories.find(c => c.id === item.category)?.color }
-          ]}>
-            {getCategoryName(item.category)}
-          </Text>
-        </View>
-        <View style={styles.newsAnalytics}>
-          <View style={[
-            styles.sentimentDot,
-            { backgroundColor: getSentimentColor(item.sentiment) }
-          ]} />
-          <Text style={styles.newsTime}>{item.time}</Text>
-        </View>
-      </View>
-      
-      <Text style={styles.newsTitle}>{item.title}</Text>
-      
-      <Text style={styles.newsExcerpt} numberOfLines={2}>
-        {item.excerpt}
-      </Text>
-      
-      <View style={styles.articleInfo}>
-        <View style={styles.byline}>
-          <Ionicons name="person" size={12} color="#6b7280" />
-          <Text style={styles.bylineText}>By {item.writer}</Text>
-        </View>
-        <View style={styles.viewCount}>
-          <Ionicons name="eye" size={12} color="#6b7280" />
-          <Text style={styles.viewsText}>{item.views}</Text>
-        </View>
-      </View>
-      
-      {/* Enhanced analytics row */}
-      <View style={styles.enhancedAnalytics}>
-        <View style={styles.analyticsItem}>
-          <CircularProgress
-            size={40}
-            progress={item.engagement / 100}
-            color="#3b82f6"
-            text={`${item.engagement}%`}
-            showText={true}  // ADDED
-          />
-          <Text style={styles.analyticsLabel}>Engagement</Text>
-        </View>
-        <View style={styles.analyticsItem}>
-          <CircularProgress
-            size={40}
-            progress={item.aiScore / 100}
-            color="#10b981"
-            text={`${item.aiScore}`}
-            showText={true}  // ADDED
-          />
-          <Text style={styles.analyticsLabel}>AI Score</Text>
-        </View>
-        <View style={styles.analyticsItem}>
-          <View style={styles.readingTime}>
-            <Ionicons name="time" size={16} color="#8b5cf6" />
-            <Text style={styles.readingTimeText}>{item.readingTime}</Text>
-          </View>
-          <Text style={styles.analyticsLabel}>Read Time</Text>
-        </View>
-      </View>
-      
-      <View style={styles.newsFooter}>
-        <View style={styles.newsStats}>
-          <View style={styles.statItem}>
-            <Ionicons name="share-social" size={12} color="#3b82f6" />
-            <Text style={styles.statCount}>{item.metrics.socialShares}</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Ionicons name="chatbubble" size={12} color="#10b981" />
-            <Text style={styles.statCount}>{item.metrics.comments}</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Ionicons name="bookmark" size={12} color="#f59e0b" />
-            <Text style={styles.statCount}>{item.metrics.saves}</Text>
-          </View>
-        </View>
-        <View style={styles.articleActions}>
-          <TouchableOpacity 
-            style={styles.iconButton}
-            onPress={() => shareArticle(item)}
-          >
-            <Ionicons name="share-outline" size={18} color="#6b7280" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton}>
-            <Ionicons 
-              name={item.isBookmarked ? "bookmark" : "bookmark-outline"} 
-              size={18} 
-              color={item.isBookmarked ? "#3b82f6" : "#6b7280"} 
-            />
-          </TouchableOpacity>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-
-  const renderFooter = () => {
-    if (loadingMore) {
-      return (
-        <View style={styles.loadingMoreContainer}>
-          <ActivityIndicator size="small" color="#3b82f6" />
-          <Text style={styles.loadingMoreText}>Loading more articles...</Text>
-        </View>
-      );
-    }
-    if (!hasMore && articles.length > 0) {
-      return (
-        <View style={styles.noMoreContainer}>
-          <Text style={styles.noMoreText}>No more articles to load</Text>
-          <TouchableOpacity 
-            style={styles.analyticsButton}
-            onPress={() => setShowAnalyticsModal(true)}
-          >
-            <Ionicons name="stats-chart" size={16} color="#3b82f6" />
-            <Text style={styles.analyticsButtonText}>View Analytics</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-    return null;
-  };
-
-  if (loading && articles.length === 0) {
+  if (loading) {
     return (
-      <View style={styles.centered}>
+      <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={styles.loadingText}>Loading SportsHub...</Text>
-        <Text style={styles.loadingSubtext}>Analyzing trends and metrics</Text>
+        <Text style={styles.loadingText}>Loading player props...</Text>
+      </View>
+    );
+  }
+
+  if (error && playerProps.length === 0) {
+    return (
+      <View style={styles.errorContainer}>
+        <Ionicons name="alert-circle" size={48} color="#ef4444" />
+        <Text style={styles.errorTitle}>Error Loading Sports Wire</Text>
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity 
+          style={styles.retryButton}
+          onPress={() => window.location.reload()}
+        >
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       {renderHeader()}
       {renderSearchBar()}
       {renderCategoryTabs()}
       
-      <FlatList
-        ref={flatListRef}
-        data={articles}
-        renderItem={renderArticleItem}
-        keyExtractor={(item) => item.id.toString()}
+      <ScrollView
         refreshControl={
           <RefreshControl 
             refreshing={refreshing} 
-            onRefresh={onRefresh}
+            onRefresh={handleRefresh}
             colors={['#3b82f6']}
             tintColor="#3b82f6"
           />
         }
-        onEndReached={loadMore}
-        onEndReachedThreshold={0.5}
-        ListHeaderComponent={
-          <>
-            {renderTrendingSection()}
-            <View style={styles.sectionHeader}>
-              <View>
-                <Text style={styles.sectionTitle}>📰 Latest {categories.find(c => c.id === selectedCategory)?.name}</Text>
-                <Text style={styles.sectionSubtitle}>
-                  {analyticsMetrics.totalArticles} articles • {analyticsMetrics.engagementRate}% avg engagement
-                </Text>
-              </View>
-              <TouchableOpacity 
-                style={styles.analyticsBadge}
-                onPress={() => setShowAnalyticsModal(true)}
-              >
-                <Ionicons name="stats-chart" size={16} color="#fff" />
-                <Text style={styles.analyticsBadgeText}>Analytics</Text>
-              </TouchableOpacity>
+        contentContainerStyle={styles.scrollContent}
+      >
+        {renderTrendingSection()}
+        
+        <View style={styles.playerPropsSection}>
+          <View style={styles.playerPropsHeader}>
+            <View>
+              <Text style={styles.playerPropsTitle}>🎯 Player Props</Text>
+              <Text style={styles.playerPropsSubtitle}>
+                {filteredProps.length} props • {analyticsMetrics.hitRate}% hit rate
+              </Text>
             </View>
-          </>
-        }
-        ListFooterComponent={renderFooter}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
+            <TouchableOpacity 
+              style={styles.analyticsBadge}
+              onPress={() => setShowAnalyticsModal(true)}
+            >
+              <Ionicons name="stats-chart" size={16} color="#fff" />
+              <Text style={styles.analyticsBadgeText}>Analytics</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {filteredProps.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="newspaper" size={64} color="#cbd5e1" />
+              <Text style={styles.emptyStateText}>No props found</Text>
+              <Text style={styles.emptyStateSubtext}>
+                {searchQuery ? 'Try a different search term' : 'Check back soon for new props'}
+              </Text>
+              {searchQuery && (
+                <TouchableOpacity 
+                  style={styles.clearSearchButton}
+                  onPress={() => setSearchQuery('')}
+                >
+                  <Text style={styles.clearSearchButtonText}>Clear Search</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            <>
+              {filteredProps.map(renderPropCard)}
+              
+              <View style={styles.resultsFooter}>
+                <Text style={styles.resultsFooterText}>
+                  Showing {filteredProps.length} of {playerProps.length} props
+                </Text>
+                <TouchableOpacity 
+                  style={styles.viewAnalyticsFooterButton}
+                  onPress={() => setShowAnalyticsModal(true)}
+                >
+                  <Ionicons name="stats-chart" size={16} color="#3b82f6" />
+                  <Text style={styles.viewAnalyticsFooterText}>View Analytics Dashboard</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </View>
+      </ScrollView>
       
       {renderAnalyticsModal()}
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -910,111 +919,146 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8fafc',
   },
-  centered: {
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   loadingText: {
     marginTop: 10,
-    color: '#666',
     fontSize: 16,
+    color: '#666',
   },
-  loadingSubtext: {
-    marginTop: 5,
-    color: '#9ca3af',
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#dc2626',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  errorText: {
     fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
   },
   header: {
-    padding: 25,
-    paddingTop: 60,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 50 : 30,
+    paddingBottom: 20,
   },
   headerContent: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 15,
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerMain: {
+    flex: 1,
+    marginLeft: 10,
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: 'white',
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 14,
-    color: 'white',
-    marginTop: 5,
+    color: 'rgba(255,255,255,0.9)',
     textAlign: 'center',
+    marginTop: 4,
   },
-  statsRow: {
+  refreshButton: {
+    padding: 8,
+  },
+  headerButtons: {
     flexDirection: 'row',
-    marginTop: 15,
-    justifyContent: 'center',
-    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
-  stat: {
+  headerActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 8,
-    marginVertical: 4,
     backgroundColor: 'rgba(255,255,255,0.1)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    flex: 1,
+    marginHorizontal: 4,
+    justifyContent: 'center',
   },
-  statText: {
+  headerActionText: {
+    color: 'white',
     fontSize: 12,
-    color: 'rgba(255,255,255,0.9)',
-    marginLeft: 5,
+    marginLeft: 4,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  searchInputContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: 'white',
-    marginHorizontal: 15,
-    marginTop: -15,
-    paddingHorizontal: 15,
+    borderRadius: 12,
+    paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
   searchInput: {
     flex: 1,
-    marginLeft: 10,
+    marginLeft: 8,
     fontSize: 14,
     color: '#1f2937',
   },
-  analyticsButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginLeft: 10,
+  searchAnalyticsButton: {
+    backgroundColor: '#3b82f6',
+    borderRadius: 12,
+    padding: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  categoriesContainer: {
+    backgroundColor: 'white',
   },
   categoriesScroll: {
-    backgroundColor: 'white',
-    paddingVertical: 10,
-  },
-  categoriesContent: {
-    paddingHorizontal: 15,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
   categoryTab: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f1f5f9',
-    paddingHorizontal: 15,
+    paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
     marginRight: 10,
-    borderLeftWidth: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
   },
   activeCategoryTab: {
     backgroundColor: '#e0e7ff',
@@ -1032,11 +1076,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    backgroundColor: '#f8fafc',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
   },
   categoryIndicatorText: {
     fontSize: 14,
@@ -1063,22 +1106,222 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: 'bold',
   },
-  section: {
-    margin: 15,
-    marginTop: 0,
+  scrollContent: {
+    paddingBottom: 30,
   },
-  sectionHeader: {
+  trendingSection: {
+    backgroundColor: 'white',
+    margin: 16,
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  trendingHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: 16,
   },
-  sectionTitle: {
+  trendingTitle: {
     fontSize: 20,
     fontWeight: '600',
     color: '#1f2937',
   },
-  sectionSubtitle: {
+  trendingSubtitle: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  viewAnalyticsButton: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
+  },
+  viewAnalyticsText: {
+    color: '#3b82f6',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  filterScroll: {
+    marginBottom: 16,
+  },
+  filterButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 15,
+    marginRight: 8,
+  },
+  activeFilterButton: {
+    backgroundColor: '#3b82f6',
+  },
+  filterText: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontWeight: '500',
+  },
+  activeFilterText: {
+    color: 'white',
+  },
+  trendingScroll: {
+    marginHorizontal: -16,
+    paddingHorizontal: 16,
+  },
+  trendingCard: {
+    width: width * 0.7,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    marginRight: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  trendingImage: {
+    height: 120,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  trendingEmoji: {
+    fontSize: 48,
+  },
+  typeBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  typeText: {
+    fontSize: 10,
+    color: 'white',
+    fontWeight: '600',
+  },
+  confidenceBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  confidenceBadgeText: {
+    fontSize: 10,
+    color: 'white',
+    fontWeight: '600',
+  },
+  trendingContent: {
+    padding: 16,
+  },
+  trendingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  trendingPlayerName: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginLeft: 4,
+    marginRight: 8,
+  },
+  sportBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  sportBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  trendingTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 8,
+  },
+  trendingInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  trendingTeam: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  trendingOdds: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  trendingMatchup: {
+    fontSize: 11,
+    color: '#9ca3af',
+    marginBottom: 12,
+  },
+  trendingFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  trendingTime: {
+    fontSize: 11,
+    color: '#9ca3af',
+  },
+  probabilityBadge: {
+    backgroundColor: '#f0f9ff',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  probabilityText: {
+    fontSize: 11,
+    color: '#3b82f6',
+    fontWeight: '600',
+  },
+  trendingActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    paddingTop: 12,
+  },
+  trendingActionButton: {
+    padding: 4,
+  },
+  playerPropsSection: {
+    backgroundColor: 'white',
+    margin: 16,
+    marginTop: 0,
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  playerPropsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  playerPropsTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  playerPropsSubtitle: {
     fontSize: 12,
     color: '#6b7280',
     marginTop: 2,
@@ -1097,338 +1340,232 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginLeft: 4,
   },
-  seeAllButton: {
-    backgroundColor: '#f1f5f9',
-    paddingHorizontal: 15,
-    paddingVertical: 6,
-    borderRadius: 15,
-  },
-  seeAll: {
-    color: '#3b82f6',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  filterScroll: {
-    marginBottom: 15,
-  },
-  filterButton: {
-    paddingHorizontal: 15,
-    paddingVertical: 6,
-    backgroundColor: '#f1f5f9',
-    borderRadius: 15,
-    marginRight: 10,
-  },
-  activeFilterButton: {
-    backgroundColor: '#3b82f6',
-  },
-  filterText: {
-    fontSize: 12,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  activeFilterText: {
-    color: 'white',
-  },
-  trendingScroll: {
-    marginHorizontal: -15,
-    paddingHorizontal: 15,
-  },
-  trendingCard: {
-    width: width * 0.75,
+  propCard: {
     backgroundColor: 'white',
-    borderRadius: 15,
-    marginRight: 15,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  trendingImage: {
-    height: 120,
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  trendingEmoji: {
-    fontSize: 48,
-  },
-  storyTypeBadge: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  storyTypeText: {
-    fontSize: 10,
-    color: 'white',
-    fontWeight: '600',
-  },
-  sentimentBadge: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  sentimentBadgeText: {
-    fontSize: 8,
-    color: 'white',
-    fontWeight: '600',
-    marginLeft: 2,
-  },
-  trendingContent: {
-    padding: 15,
-  },
-  writerInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  writerName: {
-    fontSize: 11,
-    color: '#6b7280',
-    marginLeft: 4,
-    marginRight: 8,
-  },
-  sportTag: {
-    backgroundColor: '#f1f5f9',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  sportTagText: {
-    fontSize: 10,
-    color: '#6b7280',
-    fontWeight: '600',
-  },
-  trendingTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 8,
-    lineHeight: 18,
-  },
-  analyticsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  analyticsMetric: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  analyticsText: {
-    fontSize: 10,
-    color: '#6b7280',
-    marginLeft: 4,
-  },
-  trendingFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  trendingCategory: {
-    fontSize: 10,
-    color: '#3b82f6',
-    fontWeight: '600',
-  },
-  trendingTime: {
-    fontSize: 10,
-    color: '#9ca3af',
-  },
-  articleActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    paddingTop: 10,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-  },
-  actionText: {
-    fontSize: 11,
-    color: '#6b7280',
-    marginLeft: 4,
-  },
-  newsCard: {
-    backgroundColor: 'white',
-    marginHorizontal: 15,
-    marginBottom: 10,
-    padding: 20,
     borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
-  lastCard: {
-    marginBottom: 20,
-  },
-  newsHeader: {
+  propHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 16,
   },
-  newsCategoryBadge: {
+  propCategories: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  categoryBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
   },
-  newsCategoryText: {
+  categoryText: {
     fontSize: 10,
     fontWeight: '600',
   },
-  newsAnalytics: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  sentimentDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  newsTime: {
-    fontSize: 11,
+  propTime: {
+    fontSize: 12,
     color: '#9ca3af',
   },
-  newsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 8,
-    lineHeight: 20,
-  },
-  newsExcerpt: {
-    fontSize: 13,
-    color: '#6b7280',
-    lineHeight: 18,
-    marginBottom: 12,
-  },
-  articleInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  byline: {
+  propPlayerInfo: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 16,
   },
-  bylineText: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginLeft: 4,
-  },
-  viewCount: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  viewsText: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginLeft: 4,
-  },
-  enhancedAnalytics: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    marginBottom: 15,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-  },
-  analyticsItem: {
-    alignItems: 'center',
-  },
-  progressText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  analyticsLabel: {
-    fontSize: 10,
-    color: '#6b7280',
-    marginTop: 4,
-  },
-  readingTime: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  readingTimeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginLeft: 4,
-  },
-  newsFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 15,
-  },
-  newsStats: {
-    flexDirection: 'row',
-  },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  statCount: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginLeft: 4,
-  },
-  iconButton: {
-    padding: 6,
-    marginLeft: 10,
-  },
-  listContent: {
-    paddingBottom: 30,
-  },
-  loadingMoreContainer: {
-    flexDirection: 'row',
+  playerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    marginRight: 12,
   },
-  loadingMoreText: {
-    marginLeft: 10,
-    color: '#6b7280',
+  playerAvatarText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  playerDetails: {
+    flex: 1,
+  },
+  playerName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 2,
+  },
+  playerTeam: {
     fontSize: 14,
+    color: '#6b7280',
   },
-  noMoreContainer: {
-    padding: 20,
+  propLineCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+  },
+  propLineInfo: {
+    marginBottom: 8,
+  },
+  propLineLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 2,
+  },
+  propLineValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  propOddsInfo: {
+    alignItems: 'flex-end',
+  },
+  propMetrics: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  metricItem: {
     alignItems: 'center',
   },
-  noMoreText: {
-    color: '#9ca3af',
-    fontSize: 14,
-    fontStyle: 'italic',
-    marginBottom: 10,
+  circularProgressContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
   },
-  analyticsButtonText: {
+  circularProgressText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  metricLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  sportEmojiContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 60,
+    marginBottom: 4,
+  },
+  sportEmoji: {
+    fontSize: 24,
+    marginBottom: 4,
+  },
+  sportNameText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  aiInsightsContainer: {
+    backgroundColor: '#f0f9ff',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  aiInsightsTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#3b82f6',
+    marginBottom: 8,
+  },
+  aiInsightItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+  },
+  aiInsightText: {
+    fontSize: 12,
+    color: '#1e40af',
+    marginLeft: 8,
+    flex: 1,
+  },
+  propActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  trackButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  trackButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  actionButton: {
+    padding: 8,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  emptyStateText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#6b7280',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: '#9ca3af',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  clearSearchButton: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  clearSearchButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  resultsFooter: {
+    alignItems: 'center',
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  resultsFooterText: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 12,
+  },
+  viewAnalyticsFooterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+  },
+  viewAnalyticsFooterText: {
     color: '#3b82f6',
     fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 4,
+    fontWeight: '600',
+    marginLeft: 6,
   },
   // Modal Styles
   modalContainer: {
@@ -1477,9 +1614,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  analyticsSection: {
-    marginBottom: 25,
-  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
@@ -1490,6 +1624,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
+    marginBottom: 25,
   },
   metricCard: {
     width: '48%',
@@ -1510,51 +1645,41 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     marginBottom: 8,
   },
-  hotTopicItem: {
+  hotSportItem: {
     backgroundColor: '#f8fafc',
     padding: 12,
     borderRadius: 10,
     marginBottom: 8,
   },
-  topicInfo: {
+  sportInfo: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
   },
-  topicName: {
+  sportIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  sportIconText: {
+    color: 'white',
+    fontSize: 12,
+  },
+  sportDetails: {
+    flex: 1,
+  },
+  sportName: {
     fontSize: 14,
     fontWeight: '600',
     color: '#1f2937',
   },
-  topicCount: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  sentimentChart: {
-    backgroundColor: '#f8fafc',
-    padding: 15,
-    borderRadius: 10,
-  },
-  sentimentBar: {
-    height: 20,
-    backgroundColor: '#e5e7eb',
-    borderRadius: 10,
-    overflow: 'hidden',
-    marginBottom: 10,
-  },
-  sentimentFill: {
-    height: '100%',
-    borderRadius: 10,
-  },
-  sentimentLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  sentimentLabel: {
+  sportCount: {
     fontSize: 12,
     color: '#6b7280',
   },
 });
 
-export default SportsNewsHub;
+export default SportsWireScreen;

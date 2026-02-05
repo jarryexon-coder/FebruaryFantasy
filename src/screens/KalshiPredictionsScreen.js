@@ -1,3 +1,4 @@
+// src/screens/kalshiPredictionsScreen.js - UPDATED WITH HOOK INTEGRATION
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
@@ -21,19 +22,77 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logAnalyticsEvent, logScreenView } from '../services/firebase';
 import { useAppNavigation } from '../navigation/NavigationHelper';
 
-// ADDED: Import search history hook and data structures
+// Import the useKalshiPredictions hook (you'll need to create this)
+import { useKalshiPredictions } from '../hooks/useKalshiPredictions';
+
+// Import search history hook and data structures
 import { useSearch } from '../providers/SearchProvider';
 import { samplePlayers } from '../data/players';
 import { teams } from '../data/teams';
 import { statCategories } from '../data/stats';
 
-// ADDED: Import backend API
+// Import backend API
 import { playerApi } from '../services/api';
-
 import apiService from '../services/api';
 import Purchases from '../utils/RevenueCatConfig';
 
 const { width } = Dimensions.get('window');
+
+// ============ MOCK DATA FOR FALLBACK ============
+const MOCK_KALSHI_PREDICTIONS = [
+  { 
+    id: '1', 
+    question: 'Will Trump win the 2024 presidential election?', 
+    category: 'Politics', 
+    yesPrice: '0.52', 
+    noPrice: '0.48', 
+    volume: 'High', 
+    analysis: 'Current polls show close race with slight edge to Trump', 
+    expires: 'Nov 5, 2024', 
+    confidence: 65, 
+    edge: '+2.5%',
+    aiGenerated: false 
+  },
+  { 
+    id: '2', 
+    question: 'Will US recession occur in 2024?', 
+    category: 'Economics', 
+    yesPrice: '0.38', 
+    noPrice: '0.62', 
+    volume: 'High', 
+    analysis: 'Economic indicators mixed, but strong labor market reduces probability', 
+    expires: 'Dec 31, 2024', 
+    confidence: 68, 
+    edge: '+2.9%',
+    aiGenerated: false 
+  },
+  { 
+    id: '3', 
+    question: 'Will Chiefs win Super Bowl 2025?', 
+    category: 'Sports', 
+    yesPrice: '0.28', 
+    noPrice: '0.72', 
+    volume: 'High', 
+    analysis: 'Strong team but competitive field reduces probability', 
+    expires: 'Feb 9, 2025', 
+    confidence: 62, 
+    edge: '+1.5%',
+    aiGenerated: false 
+  },
+  { 
+    id: '4', 
+    question: 'Will Taylor Swift win Album of the Year Grammy 2025?', 
+    category: 'Culture', 
+    yesPrice: '0.55', 
+    noPrice: '0.45', 
+    volume: 'High', 
+    analysis: 'Critical acclaim and commercial success create strong candidacy', 
+    expires: 'Feb 2, 2025', 
+    confidence: 70, 
+    edge: '+3.6%',
+    aiGenerated: false 
+  },
+];
 
 // ============ KALSHI MARKET ANALYTICS BOX ============
 const KalshiAnalyticsBox = ({ marketData, setMarketData }) => {
@@ -258,6 +317,29 @@ const kalshiAnalyticsStyles = StyleSheet.create({
 const KalshiContractExplainer = () => {
   const [expanded, setExpanded] = useState(false);
 
+  const steps = [
+    {
+      number: 1,
+      title: 'Binary Contracts',
+      description: 'Buy "Yes" or "No" contracts on event outcomes. Prices range from $0.01 to $0.99',
+    },
+    {
+      number: 2,
+      title: 'Market Pricing',
+      description: 'Contract price reflects market-implied probability. $0.75 = 75% chance of "Yes"',
+    },
+    {
+      number: 3,
+      title: 'Payout & Risk',
+      description: 'Win = $1.00 per contract. Maximum loss = purchase price',
+    },
+    {
+      number: 4,
+      title: 'Trade Anytime',
+      description: 'Sell contracts before event settlement. No house edge - peer-to-peer trading',
+    },
+  ];
+
   return (
     <View style={explainerStyles.container}>
       <TouchableOpacity 
@@ -277,53 +359,17 @@ const KalshiContractExplainer = () => {
 
       {expanded && (
         <View style={explainerStyles.content}>
-          <View style={explainerStyles.step}>
-            <View style={explainerStyles.stepNumber}>
-              <Text style={explainerStyles.stepNumberText}>1</Text>
+          {steps.map((step) => (
+            <View key={step.number} style={explainerStyles.step}>
+              <View style={explainerStyles.stepNumber}>
+                <Text style={explainerStyles.stepNumberText}>{step.number}</Text>
+              </View>
+              <View style={explainerStyles.stepContent}>
+                <Text style={explainerStyles.stepTitle}>{step.title}</Text>
+                <Text style={explainerStyles.stepDescription}>{step.description}</Text>
+              </View>
             </View>
-            <View style={explainerStyles.stepContent}>
-              <Text style={explainerStyles.stepTitle}>Binary Contracts</Text>
-              <Text style={explainerStyles.stepDescription}>
-                Buy "Yes" or "No" contracts on event outcomes. Prices range from $0.01 to $0.99[citation:6]
-              </Text>
-            </View>
-          </View>
-
-          <View style={explainerStyles.step}>
-            <View style={explainerStyles.stepNumber}>
-              <Text style={explainerStyles.stepNumberText}>2</Text>
-            </View>
-            <View style={explainerStyles.stepContent}>
-              <Text style={explainerStyles.stepTitle}>Market Pricing</Text>
-              <Text style={explainerStyles.stepDescription}>
-                Contract price reflects market-implied probability. $0.75 = 75% chance of "Yes"[citation:6]
-              </Text>
-            </View>
-          </View>
-
-          <View style={explainerStyles.step}>
-            <View style={explainerStyles.stepNumber}>
-              <Text style={explainerStyles.stepNumberText}>3</Text>
-            </View>
-            <View style={explainerStyles.stepContent}>
-              <Text style={explainerStyles.stepTitle}>Payout & Risk</Text>
-              <Text style={explainerStyles.stepDescription}>
-                Win = $1.00 per contract. Maximum loss = purchase price[citation:6]
-              </Text>
-            </View>
-          </View>
-
-          <View style={explainerStyles.step}>
-            <View style={explainerStyles.stepNumber}>
-              <Text style={explainerStyles.stepNumberText}>4</Text>
-            </View>
-            <View style={explainerStyles.stepContent}>
-              <Text style={explainerStyles.stepTitle}>Trade Anytime</Text>
-              <Text style={explainerStyles.stepDescription}>
-                Sell contracts before event settlement. No house edge - peer-to-peer trading[citation:6]
-              </Text>
-            </View>
-          </View>
+          ))}
 
           <View style={explainerStyles.legalDisclaimer}>
             <Ionicons name="warning" size={14} color="#f59e0b" />
@@ -435,6 +481,26 @@ const KalshiNewsFeed = ({ newsItems }) => {
     ? newsItems 
     : newsItems.filter(item => item.category === selectedCategory);
 
+  const getCategoryColor = (category) => {
+    switch(category) {
+      case 'Sports': return '#ef444420';
+      case 'Politics': return '#3b82f620';
+      case 'Economics': return '#10b98120';
+      case 'Legal': return '#f59e0b20';
+      default: return '#6b728020';
+    }
+  };
+
+  const getCategoryTextColor = (category) => {
+    switch(category) {
+      case 'Sports': return '#ef4444';
+      case 'Politics': return '#3b82f6';
+      case 'Economics': return '#10b981';
+      case 'Legal': return '#f59e0b';
+      default: return '#6b7280';
+    }
+  };
+
   const renderNewsItem = ({ item }) => (
     <TouchableOpacity 
       style={newsStyles.newsItem}
@@ -447,7 +513,9 @@ const KalshiNewsFeed = ({ newsItems }) => {
           newsStyles.categoryBadge,
           { backgroundColor: getCategoryColor(item.category) }
         ]}>
-          <Text style={newsStyles.categoryText}>{item.category}</Text>
+          <Text style={[newsStyles.categoryText, { color: getCategoryTextColor(item.category) }]}>
+            {item.category}
+          </Text>
         </View>
         <Text style={newsStyles.timestamp}>{item.timestamp}</Text>
       </View>
@@ -505,16 +573,6 @@ const KalshiNewsFeed = ({ newsItems }) => {
       />
     </View>
   );
-};
-
-const getCategoryColor = (category) => {
-  switch(category) {
-    case 'Sports': return '#ef444420';
-    case 'Politics': return '#3b82f620';
-    case 'Economics': return '#10b98120';
-    case 'Legal': return '#f59e0b20';
-    default: return '#6b728020';
-  }
 };
 
 const newsStyles = StyleSheet.create({
@@ -770,25 +828,43 @@ const useKalshiGenerateCounter = () => {
   };
 };
 
-// ============ MAIN KALSHI SCREEN ============
+// ============ TRANSFORM API DATA HELPER ============
+const transformApiData = (apiMarkets) => {
+  return apiMarkets.map((market, index) => ({
+    id: market.id || market.marketId || `kalshi-${index + 1}`,
+    question: market.title || market.question || market.name || `Market ${index + 1}`,
+    category: market.category || market.type || 'General',
+    yesPrice: market.yesPrice?.toString() || market.price?.toString() || '0.50',
+    noPrice: market.noPrice?.toString() || (1 - (market.price || 0.5)).toFixed(2),
+    volume: market.volume || market.tradingVolume || 'Medium',
+    analysis: market.analysis || market.description || market.summary || 'No analysis available',
+    expires: market.expires || market.expirationDate || market.endDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString(),
+    confidence: market.confidence || market.probability || Math.floor(Math.random() * 30) + 60,
+    edge: market.edge || market.expectedValue || `+${(Math.random() * 5).toFixed(1)}%`,
+    aiGenerated: market.aiGenerated || false
+  }));
+};
+
+// ============ MAIN KALSHI SCREEN WITH HOOK INTEGRATION ============
 export default function KalshiPredictionsScreen({ navigation, route }) {
-const { searchHistory, addToSearchHistory, clearSearchHistory } = useSearch();  
+  const { searchHistory, addToSearchHistory, clearSearchHistory } = useSearch();
+  
+  // Use the custom hook for data fetching
+  const { data: apiPredictions, loading: apiLoading, error: apiError, refetch } = useKalshiPredictions();
+  
   const generateCounter = useKalshiGenerateCounter();
   
-  // ADDED: New states for search functionality
+  // State for UI
+  const [predictions, setPredictions] = useState([]);
+  const [filteredPredictions, setFilteredPredictions] = useState([]);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [useBackend, setUseBackend] = useState(true);
-  const [backendError, setBackendError] = useState(null);
-  
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
   const [generating, setGenerating] = useState(false);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
-  const [kalshiPredictions, setKalshiPredictions] = useState([]);
   const [selectedMarket, setSelectedMarket] = useState('All');
   const [marketData, setMarketData] = useState({
     weeklyVolume: '$2.0B',
@@ -797,9 +873,52 @@ const { searchHistory, addToSearchHistory, clearSearchHistory } = useSearch();
     topMarket: 'NFL Combos',
     recordDay: '$466M'
   });
-  const [useRealApi, setUseRealApi] = useState(false);
+  const [error, setError] = useState(null);
 
-  // ADDED: Handle navigation parameters
+  // Transform API data when hook returns it
+  useEffect(() => {
+    console.log('🔄 Kalshi API data changed:', { apiPredictions, apiLoading, apiError });
+    
+    if (apiLoading) {
+      setLoading(true);
+      return;
+    }
+    
+    if (apiError) {
+      console.error('❌ API Error from hook:', apiError);
+      setError(apiError);
+      // Fallback to mock data when error occurs
+      console.log('🔄 Falling back to mock data');
+      setPredictions(MOCK_KALSHI_PREDICTIONS);
+      setFilteredPredictions(MOCK_KALSHI_PREDICTIONS);
+      setLoading(false);
+      return;
+    }
+    
+    if (apiPredictions && apiPredictions.length > 0) {
+      console.log(`✅ Using REAL kalshi predictions: ${apiPredictions.length} predictions`);
+      
+      // Transform API data to match our component structure
+      const transformedPredictions = transformApiData(apiPredictions);
+      
+      setPredictions(transformedPredictions);
+      setFilteredPredictions(transformedPredictions);
+      setLoading(false);
+      setError(null);
+      
+    } else if (apiPredictions && apiPredictions.length === 0) {
+      // API returns empty array - use mock data
+      console.log('⚠️ API returned empty array, using mock data');
+      setPredictions(MOCK_KALSHI_PREDICTIONS);
+      setFilteredPredictions(MOCK_KALSHI_PREDICTIONS);
+      setLoading(false);
+    } else {
+      // No data yet, but loading is false
+      setLoading(apiLoading);
+    }
+  }, [apiPredictions, apiLoading, apiError]);
+
+  // Handle navigation params
   useEffect(() => {
     if (route.params?.initialSearch) {
       setSearchInput(route.params.initialSearch);
@@ -807,359 +926,65 @@ const { searchHistory, addToSearchHistory, clearSearchHistory } = useSearch();
       handleKalshiSearch(route.params.initialSearch);
     }
     if (route.params?.initialSport) {
-      // Kalshi doesn't have sports filter, but we can use it for market filtering
       setSelectedMarket('Sports');
     }
     
     logScreenView('KalshiPredictionsScreen');
     loadPredictions();
-    initializeBackendData();
   }, [route.params]);
 
-  // ADDED: Initialize backend data function
-  const initializeBackendData = async () => {
-    try {
-      // Check if backend is available
-      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/health`);
-      if (response.ok) {
-        setUseBackend(true);
-        await loadPlayersFromBackend();
-      } else {
-        setUseBackend(false);
-        console.log('Backend not available, using sample data');
-      }
-    } catch (error) {
-      console.log('Backend check failed, using sample data:', error.message);
-      setUseBackend(false);
+  // Handle market filter
+  useEffect(() => {
+    if (selectedMarket === 'All') {
+      setFilteredPredictions(predictions);
+    } else {
+      const filtered = predictions.filter(prediction => prediction.category === selectedMarket);
+      setFilteredPredictions(filtered);
     }
-  };
+  }, [selectedMarket, predictions]);
 
-  // ADDED: Load players from backend function
-  const loadPlayersFromBackend = useCallback(async (searchQuery = '', positionFilter = 'all') => {
+  // Handle search
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredPredictions(predictions);
+      return;
+    }
+
+    const lowerQuery = searchQuery.toLowerCase();
+    const filtered = predictions.filter(prediction =>
+      (prediction.question || '').toLowerCase().includes(lowerQuery) ||
+      (prediction.category || '').toLowerCase().includes(lowerQuery) ||
+      (prediction.analysis || '').toLowerCase().includes(lowerQuery)
+    );
+    
+    setFilteredPredictions(filtered);
+  }, [searchQuery, predictions]);
+
+  // Updated refresh function to use hook's refetch
+  const handleRefresh = async () => {
+    console.log('🔄 Manual refresh triggered');
+    setRefreshing(true);
     try {
-      setRefreshing(true);
-      setBackendError(null);
-      
-      console.log('Fetching Kalshi data from backend...');
-      
-      const filters = {};
-      if (selectedMarket !== 'All') {
-        filters.category = selectedMarket;
-      }
-      
-      let data = [];
-      
-      if (searchQuery) {
-        // Use search endpoint
-        const searchResults = await playerApi.searchPlayers('Kalshi', searchQuery, filters);
-        data = searchResults.players || searchResults;
-        console.log(`Backend search found ${data.length} Kalshi contracts for "${searchQuery}"`);
-      } else {
-        // Get all data
-        const allData = await playerApi.getPlayers('Kalshi', filters);
-        data = allData.players || allData;
-        console.log(`Backend returned ${data.length} Kalshi contracts`);
-      }
-      
-      // If no results from backend and we should fallback to sample data
-      if ((!data || data.length === 0) && process.env.EXPO_PUBLIC_FALLBACK_TO_SAMPLE === 'true') {
-        console.log('No results from backend, falling back to sample data');
-        data = filterSampleData(searchQuery, selectedMarket);
-      }
-      
-      setKalshiPredictions(data);
-      
-    } catch (error) {
-      console.error('Error loading Kalshi data from backend:', error);
-      setBackendError(error.message);
-      
-      // Fallback to sample data if backend fails
-      if (process.env.EXPO_PUBLIC_FALLBACK_TO_SAMPLE === 'true') {
-        console.log('Backend failed, falling back to sample data');
-        const data = filterSampleData(searchQuery, selectedMarket);
-        setKalshiPredictions(data);
-      }
+      await refetch();
     } finally {
       setRefreshing(false);
     }
-  }, [selectedMarket]);
-
-  // ADDED: Filter sample data function
-  const filterSampleData = useCallback((searchQuery = '', marketFilter = 'All') => {
-    const sampleKalshiData = [
-      // Politics
-      { id: '1', question: 'Will Trump win the 2024 presidential election?', category: 'Politics', yesPrice: '0.52', noPrice: '0.48', volume: 'High', analysis: 'Current polls show close race with slight edge to Trump', expires: 'Nov 5, 2024', confidence: 65, edge: '+2.5%' },
-      { id: '2', question: 'Will a woman be elected US President before 2030?', category: 'Politics', yesPrice: '0.45', noPrice: '0.55', volume: 'Medium', analysis: 'Historical trends and recent political shifts suggest increasing possibility', expires: 'Dec 31, 2029', confidence: 72, edge: '+3.1%' },
-      { id: '3', question: 'Will UK rejoin EU before 2030?', category: 'Politics', yesPrice: '0.32', noPrice: '0.68', volume: 'Low', analysis: 'Public sentiment shifting but political barriers remain high', expires: 'Dec 31, 2029', confidence: 58, edge: '+1.8%' },
-      
-      // Economics
-      { id: '4', question: 'Will US recession occur in 2024?', category: 'Economics', yesPrice: '0.38', noPrice: '0.62', volume: 'High', analysis: 'Economic indicators mixed, but strong labor market reduces probability', expires: 'Dec 31, 2024', confidence: 68, edge: '+2.9%' },
-      { id: '5', question: 'Will Bitcoin reach $100,000 in 2024?', category: 'Economics', yesPrice: '0.41', noPrice: '0.59', volume: 'High', analysis: 'Halving event and ETF approvals create bullish sentiment', expires: 'Dec 31, 2024', confidence: 71, edge: '+3.4%' },
-      { id: '6', question: 'Will AI cause mass job displacement by 2030?', category: 'Economics', yesPrice: '0.67', noPrice: '0.33', volume: 'Medium', analysis: 'Automation trends accelerating across multiple industries', expires: 'Dec 31, 2029', confidence: 75, edge: '+4.2%' },
-      
-      // Sports
-      { id: '7', question: 'Will Chiefs win Super Bowl 2025?', category: 'Sports', yesPrice: '0.28', noPrice: '0.72', volume: 'High', analysis: 'Strong team but competitive field reduces probability', expires: 'Feb 9, 2025', confidence: 62, edge: '+1.5%' },
-      { id: '8', question: 'Will LeBron James retire before 2026?', category: 'Sports', yesPrice: '0.34', noPrice: '0.66', volume: 'Medium', analysis: 'Age and injury history increasing retirement probability', expires: 'Dec 31, 2025', confidence: 59, edge: '+1.2%' },
-      { id: '9', question: 'Will US win most gold medals in 2024 Olympics?', category: 'Sports', yesPrice: '0.61', noPrice: '0.39', volume: 'Low', analysis: 'Traditional dominance but China closing gap in certain sports', expires: 'Aug 11, 2024', confidence: 73, edge: '+3.8%' },
-      
-      // Pop Culture
-      { id: '10', question: 'Will Taylor Swift win Album of the Year Grammy 2025?', category: 'Culture', yesPrice: '0.55', noPrice: '0.45', volume: 'High', analysis: 'Critical acclaim and commercial success create strong candidacy', expires: 'Feb 2, 2025', confidence: 70, edge: '+3.6%' },
-      { id: '11', question: 'Will a Marvel movie win Best Picture Oscar before 2030?', category: 'Culture', yesPrice: '0.29', noPrice: '0.71', volume: 'Medium', analysis: 'Genre bias in Academy voting remains significant barrier', expires: 'Dec 31, 2029', confidence: 64, edge: '+2.1%' },
-      { id: '12', question: 'Will AI win a Pulitzer Prize by 2030?', category: 'Culture', yesPrice: '0.48', noPrice: '0.52', volume: 'Low', analysis: 'AI writing quality improving rapidly but ethical concerns remain', expires: 'Dec 31, 2029', confidence: 66, edge: '+2.7%' },
-    ];
-    
-    let filteredData = sampleKalshiData;
-    
-    // Apply market filter
-    if (marketFilter !== 'All') {
-      filteredData = filteredData.filter(item => item.category === marketFilter);
-    }
-    
-    // Apply search filter
-    if (searchQuery) {
-      const searchLower = searchQuery.toLowerCase().trim();
-      console.log(`Searching Kalshi for: "${searchLower}"`);
-      
-      // Split search into keywords
-      const searchKeywords = searchLower.split(/\s+/).filter(keyword => keyword.length > 0);
-      console.log('Search keywords:', searchKeywords);
-      
-      filteredData = filteredData.filter(item => {
-        const itemQuestion = item.question.toLowerCase();
-        const itemCategory = item.category.toLowerCase();
-        const itemAnalysis = item.analysis.toLowerCase();
-        
-        for (const keyword of searchKeywords) {
-          // Skip very common words
-          const commonWords = ['will', 'the', 'and', 'for', 'before', 'after', 'during', 'by'];
-          if (commonWords.includes(keyword)) {
-            continue;
-          }
-          
-          // Check if keyword matches any item property
-          if (
-            itemQuestion.includes(keyword) ||
-            itemCategory.includes(keyword) ||
-            itemAnalysis.includes(keyword) ||
-            itemQuestion.split(' ').some(word => word.includes(keyword)) ||
-            itemAnalysis.split(' ').some(word => word.includes(keyword))
-          ) {
-            console.log(`✓ Contract: matched keyword "${keyword}"`);
-            return true;
-          }
-        }
-        
-        // If we have multiple keywords, require at least one match
-        if (searchKeywords.length > 0) {
-          const nonCommonKeywords = searchKeywords.filter(kw => 
-            !['will', 'the', 'and', 'for', 'before', 'after', 'during', 'by'].includes(kw)
-          );
-          
-          if (nonCommonKeywords.length === 0) {
-            // If all keywords were common words, show all contracts
-            return true;
-          }
-          
-          return false;
-        }
-        
-        return true;
-      });
-      
-      console.log(`Found ${filteredData.length} Kalshi contracts after search`);
-    }
-    
-    console.log(`Sample data filtered: ${filteredData.length} Kalshi contracts`);
-    return filteredData;
-  }, []);
-
-  // ADDED: UPDATED Kalshi prompts with wide assortment
-  const kalshiPrompts = [
-    // Politics & Government
-    "Will there be a government shutdown in 2024?",
-    "Will Supreme Court overturn Roe v. Wade completely?",
-    "Will NATO admit Ukraine before 2026?",
-    "Will China invade Taiwan before 2030?",
-    "Will a third-party candidate win a state in 2024?",
-    
-    // Economics & Finance
-    "Will Fed cut rates more than 100bps in 2024?",
-    "Will commercial real estate crash trigger recession?",
-    "Will BRICS create new global reserve currency?",
-    "Will GameStop squeeze happen again in 2024?",
-    "Will student loan forgiveness pass Congress?",
-    
-    // Technology & AI
-    "Will AGI be achieved before 2035?",
-    "Will quantum computing break Bitcoin by 2030?",
-    "Will Neuralink have human trials in 2024?",
-    "Will deepfake cause major political scandal?",
-    "Will AI write New York Times bestseller?",
-    
-    // Sports & Entertainment
-    "Will Messi win 2024 Ballon d'Or?",
-    "Will NFL expand to London team by 2028?",
-    "Will NBA add expansion team in Las Vegas?",
-    "Will UFC introduce women's featherweight champ?",
-    "Will esports become Olympic event by 2028?",
-    
-    // Pop Culture & Media
-    "Will Barbie win Best Picture Oscar?",
-    "Will Beyoncé tour break revenue records?",
-    "Will Netflix be acquired by 2026?",
-    "Will TikTok be banned in US by 2025?",
-    "Will Marvel release R-rated movie?",
-    
-    // Science & Environment
-    "Will fusion energy achieve net gain by 2030?",
-    "Will 2024 be hottest year on record?",
-    "Will SpaceX land humans on Mars by 2030?",
-    "Will polar bears go extinct by 2050?",
-    "Will major earthquake hit California?",
-    
-    // Healthcare & Medicine
-    "Will Alzheimer's cure be found by 2030?",
-    "Will mRNA cancer vaccine be approved?",
-    "Will life expectancy reach 100 by 2050?",
-    "Will universal healthcare pass in US?",
-    "Will pandemic worse than COVID occur?",
-    
-    // Society & Culture
-    "Will 4-day workweek become standard?",
-    "Will remote work surpass office work?",
-    "Will polyamory become legally recognized?",
-    "Will social media be regulated like tobacco?",
-    "Will US population decline by 2040?",
-  ];
-
-  // ADDED: Handle search submit
-  const handleSearchSubmit = async () => {
-    if (searchInput.trim()) {
-      await addToSearchHistory(searchInput.trim());
-      setSearchQuery(searchInput.trim());
-      handleKalshiSearch(searchInput.trim());
-    }
   };
-
-  // Development data
-  const kalshiNews = [
-    {
-      id: '1',
-      title: 'Kalshi Hits $2B Weekly Volume, Commands 66% Market Share',
-      summary: 'Kalshi has become the dominant prediction market platform with $2 billion in weekly volume and 66.4% market share, surpassing competitors through CFTC regulation and Robinhood integration[citation:2].',
-      category: 'Economics',
-      timestamp: 'Today',
-      url: 'https://example.com/kalshi-growth'
-    },
-    {
-      id: '2',
-      title: 'NCAA Petitions CFTC to Pause College Sports Markets',
-      summary: 'NCAA President Charlie Baker calls for pause on college sports prediction markets until better safeguards are in place, specifically targeting Kalshi\'s markets[citation:1].',
-      category: 'Legal',
-      timestamp: 'Yesterday',
-      url: 'https://example.com/ncaa-kalshi'
-    },
-    {
-      id: '3',
-      title: 'Record $466M Daily Volume During NFL Wild Card',
-      summary: 'Kalshi processed record volume during NFL playoffs, with "Combos" (peer-to-peer parlays) driving over $100M in weekly volume[citation:2].',
-      category: 'Sports',
-      timestamp: '2 days ago',
-      url: 'https://example.com/nfl-volume'
-    },
-    {
-      id: '4',
-      title: 'CFTC Regulation Enables 50-State Access',
-      summary: 'As a CFTC-designated contract market, Kalshi operates legally nationwide despite state-level challenges from gaming regulators[citation:3].',
-      category: 'Legal',
-      timestamp: '3 days ago',
-      url: 'https://example.com/cftc-regulation'
-    },
-    {
-      id: '5',
-      title: '91% of Kalshi Volume Now Sports-Based',
-      summary: 'Platform has transformed from economic indicators to 91.1% sports volume, with NFL, NBA, and NHL contracts driving growth[citation:2].',
-      category: 'Sports',
-      timestamp: '1 week ago',
-      url: 'https://example.com/sports-dominance'
-    }
-  ];
-
-  // Market categories - EXPANDED
-  const markets = [
-    { id: 'All', name: 'All Markets', icon: 'earth', color: '#8b5cf6' },
-    { id: 'Politics', name: 'Politics', icon: 'flag', color: '#3b82f6' },
-    { id: 'Economics', name: 'Economics', icon: 'cash', color: '#10b981' },
-    { id: 'Sports', name: 'Sports', icon: 'american-football', color: '#ef4444' },
-    { id: 'Culture', name: 'Culture', icon: 'film', color: '#f59e0b' },
-    { id: 'Technology', name: 'Tech', icon: 'hardware-chip', color: '#8b5cf6' },
-    { id: 'Science', name: 'Science', icon: 'flask', color: '#14b8a6' },
-    { id: 'Health', name: 'Health', icon: 'medical', color: '#ec4899' },
-  ];
 
   const loadPredictions = async () => {
     try {
       setLoading(true);
-      
-      if (useBackend && process.env.EXPO_PUBLIC_USE_BACKEND === 'true') {
-        await loadPlayersFromBackend(searchQuery, selectedMarket);
-      } else {
-        // Use sample data only
-        const predictions = filterSampleData(searchQuery, selectedMarket);
-        setKalshiPredictions(predictions);
-        setLoading(false);
-        setRefreshing(false);
-      }
-      
-      if (useRealApi) {
-        // REAL API CALL - Using your backend
-        const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'https://pleasing-determination-production.up.railway.app'}/api/kalshi/markets`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'KALSHI-ACCESS-KEY': 'your-kalshi-access-key-here',
-          },
-        });
-        
-        if (!response.ok) {
-          throw new Error(`API Error: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        setKalshiPredictions(data.markets || []);
-        
-        if (data.platformStats) {
-          setMarketData(data.platformStats);
-        }
-      } else {
-        // MOCK DATA CALL
-        const result = await apiService.getKalshiMarkets();
-        setKalshiPredictions(result.markets || []);
-        
-        if (result.platformStats) {
-          setMarketData(result.platformStats);
-        }
-      }
-      
+      // The hook will handle data fetching
       setLoading(false);
       setRefreshing(false);
     } catch (error) {
       console.error('Error loading Kalshi predictions:', error);
-      
-      // Development data
-      try {
-        const predictions = filterSampleData(searchQuery, selectedMarket);
-        setKalshiPredictions(predictions);
-      } catch (mockError) {
-        console.error('Even mock data failed:', mockError);
-      }
-      
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  // ADDED: Handle Kalshi search
+  // Handle Kalshi search
   const handleKalshiSearch = (query) => {
     setSearchInput(query);
     setSearchQuery(query);
@@ -1169,10 +994,14 @@ const { searchHistory, addToSearchHistory, clearSearchHistory } = useSearch();
       query: query,
       market: selectedMarket,
     });
-    
-    // Filter predictions based on search
-    const filtered = filterSampleData(query, selectedMarket);
-    setKalshiPredictions(filtered);
+  };
+
+  const handleSearchSubmit = async () => {
+    if (searchInput.trim()) {
+      await addToSearchHistory(searchInput.trim());
+      setSearchQuery(searchInput.trim());
+      handleKalshiSearch(searchInput.trim());
+    }
   };
 
   const generateKalshiPrediction = async (prompt) => {
@@ -1189,65 +1018,39 @@ const { searchHistory, addToSearchHistory, clearSearchHistory } = useSearch();
       logAnalyticsEvent('kalshi_prediction_generated', { prompt });
       
       try {
-        let newPrediction;
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
-        if (useRealApi) {
-          // REAL API CALL for AI prediction
-          const response = await apiService.generatePrediction(prompt, 'Kalshi');
-          if (response.success) {
-            newPrediction = {
-              id: `kalshi-${Date.now()}`,
-              question: response.prediction.analysis.substring(0, 80),
-              category: 'AI Generated',
-              yesPrice: '0.65',
-              noPrice: '0.35',
-              volume: 'AI Analysis',
-              confidence: response.prediction.confidence || 78,
-              edge: response.prediction.edge || '+4.5%',
-              analysis: response.prediction.analysis,
-              expires: 'Tomorrow',
-              aiGenerated: true,
-              generatedFrom: prompt
-            };
-          } else {
-            throw new Error('AI generation failed');
-          }
-        } else {
-          // MOCK AI prediction
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          // Random category based on prompt content
-          const getCategoryFromPrompt = (prompt) => {
-            if (prompt.toLowerCase().includes('president') || prompt.toLowerCase().includes('election') || prompt.toLowerCase().includes('government')) return 'Politics';
-            if (prompt.toLowerCase().includes('fed') || prompt.toLowerCase().includes('recession') || prompt.toLowerCase().includes('econom')) return 'Economics';
-            if (prompt.toLowerCase().includes('nfl') || prompt.toLowerCase().includes('sports') || prompt.toLowerCase().includes('win')) return 'Sports';
-            if (prompt.toLowerCase().includes('ai') || prompt.toLowerCase().includes('tech') || prompt.toLowerCase().includes('quantum')) return 'Technology';
-            if (prompt.toLowerCase().includes('climate') || prompt.toLowerCase().includes('earthquake') || prompt.toLowerCase().includes('science')) return 'Science';
-            return 'Culture';
-          };
-          
-          const category = getCategoryFromPrompt(prompt);
-          const yesPrice = (Math.random() * 0.4 + 0.3).toFixed(2); // Random between 0.30 and 0.70
-          const noPrice = (1 - parseFloat(yesPrice)).toFixed(2);
-          const confidence = Math.floor(Math.random() * 20 + 60); // 60-80%
-          
-          newPrediction = {
-            id: `kalshi-${Date.now()}`,
-            question: `AI-Generated: ${prompt}`,
-            category: category,
-            yesPrice: yesPrice,
-            noPrice: noPrice,
-            volume: 'AI Analysis',
-            confidence: confidence,
-            edge: `+${(Math.random() * 5 + 1).toFixed(1)}%`,
-            analysis: `AI analysis of "${prompt}". Based on current market trends, historical data, and probability models, this contract has been generated with ${confidence}% confidence. Market sentiment and recent developments support this prediction.`,
-            expires: 'Tomorrow',
-            aiGenerated: true,
-            generatedFrom: prompt
-          };
-        }
+        // Random category based on prompt content
+        const getCategoryFromPrompt = (prompt) => {
+          if (prompt.toLowerCase().includes('president') || prompt.toLowerCase().includes('election') || prompt.toLowerCase().includes('government')) return 'Politics';
+          if (prompt.toLowerCase().includes('fed') || prompt.toLowerCase().includes('recession') || prompt.toLowerCase().includes('econom')) return 'Economics';
+          if (prompt.toLowerCase().includes('nfl') || prompt.toLowerCase().includes('sports') || prompt.toLowerCase().includes('win')) return 'Sports';
+          if (prompt.toLowerCase().includes('ai') || prompt.toLowerCase().includes('tech') || prompt.toLowerCase().includes('quantum')) return 'Technology';
+          if (prompt.toLowerCase().includes('climate') || prompt.toLowerCase().includes('earthquake') || prompt.toLowerCase().includes('science')) return 'Science';
+          return 'Culture';
+        };
         
-        setKalshiPredictions([newPrediction, ...kalshiPredictions]);
+        const category = getCategoryFromPrompt(prompt);
+        const yesPrice = (Math.random() * 0.4 + 0.3).toFixed(2);
+        const noPrice = (1 - parseFloat(yesPrice)).toFixed(2);
+        const confidence = Math.floor(Math.random() * 20 + 60);
+        
+        const newPrediction = {
+          id: `kalshi-${Date.now()}`,
+          question: `AI-Generated: ${prompt}`,
+          category: category,
+          yesPrice: yesPrice,
+          noPrice: noPrice,
+          volume: 'AI Analysis',
+          confidence: confidence,
+          edge: `+${(Math.random() * 5 + 1).toFixed(1)}%`,
+          analysis: `AI analysis of "${prompt}". Based on current market trends, historical data, and probability models, this contract has been generated with ${confidence}% confidence. Market sentiment and recent developments support this prediction.`,
+          expires: 'Tomorrow',
+          aiGenerated: true,
+          generatedFrom: prompt
+        };
+        
+        setPredictions([newPrediction, ...predictions]);
         
         Alert.alert('Success', result.message || 'Prediction generated successfully!');
         
@@ -1290,6 +1093,72 @@ const { searchHistory, addToSearchHistory, clearSearchHistory } = useSearch();
     }
   };
 
+  // Kalshi prompts
+  const kalshiPrompts = [
+    // Politics & Government
+    "Will there be a government shutdown in 2024?",
+    "Will Supreme Court overturn Roe v. Wade completely?",
+    "Will NATO admit Ukraine before 2026?",
+    "Will China invade Taiwan before 2030?",
+    "Will a third-party candidate win a state in 2024?",
+    
+    // Economics & Finance
+    "Will Fed cut rates more than 100bps in 2024?",
+    "Will commercial real estate crash trigger recession?",
+    "Will BRICS create new global reserve currency?",
+    "Will GameStop squeeze happen again in 2024?",
+    "Will student loan forgiveness pass Congress?",
+  ];
+
+  // Kalshi news
+  const kalshiNews = [
+    {
+      id: '1',
+      title: 'Kalshi Hits $2B Weekly Volume, Commands 66% Market Share',
+      summary: 'Kalshi has become the dominant prediction market platform with $2 billion in weekly volume and 66.4% market share, surpassing competitors through CFTC regulation and Robinhood integration[citation:2].',
+      category: 'Economics',
+      timestamp: 'Today',
+      url: 'https://example.com/kalshi-growth'
+    },
+    {
+      id: '2',
+      title: 'NCAA Petitions CFTC to Pause College Sports Markets',
+      summary: 'NCAA President Charlie Baker calls for pause on college sports prediction markets until better safeguards are in place, specifically targeting Kalshi\'s markets[citation:1].',
+      category: 'Legal',
+      timestamp: 'Yesterday',
+      url: 'https://example.com/ncaa-kalshi'
+    },
+  ];
+
+  const markets = [
+    { id: 'All', name: 'All Markets', icon: 'earth', color: '#8b5cf6' },
+    { id: 'Politics', name: 'Politics', icon: 'flag', color: '#3b82f6' },
+    { id: 'Economics', name: 'Economics', icon: 'cash', color: '#10b981' },
+    { id: 'Sports', name: 'Sports', icon: 'american-football', color: '#ef4444' },
+    { id: 'Culture', name: 'Culture', icon: 'film', color: '#f59e0b' },
+    { id: 'Technology', name: 'Tech', icon: 'hardware-chip', color: '#8b5cf6' },
+    { id: 'Science', name: 'Science', icon: 'flask', color: '#14b8a6' },
+    { id: 'Health', name: 'Health', icon: 'medical', color: '#ec4899' },
+  ];
+
+  const getCategoryColor = (category) => {
+    switch(category) {
+      case 'Sports': return '#ef4444';
+      case 'Politics': return '#3b82f6';
+      case 'Economics': return '#10b981';
+      case 'Culture': return '#f59e0b';
+      case 'Technology': return '#8b5cf6';
+      case 'Science': return '#14b8a6';
+      case 'Health': return '#ec4899';
+      case 'AI Generated': return '#8b5cf6';
+      default: return '#6b7280';
+    }
+  };
+
+  const getCategoryTextColor = (category) => {
+    return getCategoryColor(category);
+  };
+
   const renderPredictionCard = ({ item }) => {
     const yesProbability = Math.round(parseFloat(item.yesPrice) * 100);
     
@@ -1299,7 +1168,7 @@ const { searchHistory, addToSearchHistory, clearSearchHistory } = useSearch();
           <View style={styles.categoryRow}>
             <View style={[
               styles.categoryBadge,
-              { backgroundColor: getCategoryColor(item.category) }
+              { backgroundColor: getCategoryColor(item.category) + '20' }
             ]}>
               <Text style={[
                 styles.categoryText,
@@ -1395,25 +1264,29 @@ const { searchHistory, addToSearchHistory, clearSearchHistory } = useSearch();
     );
   };
 
-  const getCategoryTextColor = (category) => {
-    switch(category) {
-      case 'Sports': return '#ef4444';
-      case 'Politics': return '#3b82f6';
-      case 'Economics': return '#10b981';
-      case 'Culture': return '#f59e0b';
-      case 'Technology': return '#8b5cf6';
-      case 'Science': return '#14b8a6';
-      case 'Health': return '#ec4899';
-      case 'AI Generated': return '#8b5cf6';
-      default: return '#6b7280';
-    }
-  };
+  // Loading Component
+  const LoadingSkeleton = () => (
+    <View style={{ marginHorizontal: 20 }}>
+      {[1, 2, 3].map((i) => (
+        <View key={i} style={[styles.predictionCard, { opacity: 0.7, marginBottom: 12 }]}>
+          <View style={styles.predictionCardContent}>
+            <View style={[styles.predictionHeader, { marginBottom: 15 }]}>
+              <View style={{ flex: 1 }}>
+                <View style={{ height: 22, backgroundColor: '#334155', borderRadius: 4, marginBottom: 8, width: '60%' }} />
+                <View style={{ height: 16, backgroundColor: '#334155', borderRadius: 4, width: '40%' }} />
+              </View>
+              <View style={{ height: 32, width: 80, backgroundColor: '#334155', borderRadius: 16 }} />
+            </View>
+            <View style={{ height: 20, backgroundColor: '#334155', borderRadius: 4, marginBottom: 12, width: '80%' }} />
+            <View style={{ height: 60, backgroundColor: '#334155', borderRadius: 8, marginBottom: 12 }} />
+            <View style={{ height: 16, backgroundColor: '#334155', borderRadius: 4, width: '90%' }} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
 
-  const filteredPredictions = selectedMarket === 'All' 
-    ? kalshiPredictions 
-    : kalshiPredictions.filter(prediction => prediction.category === selectedMarket);
-
-  // ADDED: Search bar component
+  // Search bar component
   const renderSearchBar = () => {
     if (!showSearch) return null;
 
@@ -1434,7 +1307,7 @@ const { searchHistory, addToSearchHistory, clearSearchHistory } = useSearch();
     );
   };
 
-  // ADDED: Search results info
+  // Search results info
   const renderSearchResultsInfo = () => {
     if (!searchQuery.trim() || filteredPredictions.length === 0) return null;
     
@@ -1457,11 +1330,84 @@ const { searchHistory, addToSearchHistory, clearSearchHistory } = useSearch();
     );
   };
 
-  if (loading) {
+  if (loading || apiLoading) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#8b5cf6" />
-        <Text style={styles.loadingText}>Loading Kalshi Markets...</Text>
+      <View style={styles.container}>
+        <View style={[styles.header, {backgroundColor: '#8b5cf6'}]}>
+          <LinearGradient
+            colors={['#8b5cf6', '#7c3aed']}
+            style={[StyleSheet.absoluteFillObject, styles.headerOverlay]}
+          >
+            <View style={styles.headerTop}>
+              <TouchableOpacity 
+                style={styles.backButton}
+                onPress={() => navigation.goBack()}
+              >
+                <Ionicons name="arrow-back" size={24} color="white" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.headerMain}>
+              <View style={styles.headerIcon}>
+                <Ionicons name="shield-checkmark" size={32} color="white" />
+              </View>
+              <View style={styles.headerText}>
+                <Text style={styles.headerTitle}>Kalshi Predictions</Text>
+                <Text style={styles.headerSubtitle}>Loading Kalshi markets...</Text>
+              </View>
+              <ActivityIndicator size={24} color="white" />
+            </View>
+          </LinearGradient>
+        </View>
+        <LoadingSkeleton />
+      </View>
+    );
+  }
+
+  const displayError = error || apiError;
+  if (displayError) {
+    return (
+      <View style={styles.container}>
+        <View style={[styles.header, {backgroundColor: '#8b5cf6'}]}>
+          <LinearGradient
+            colors={['#8b5cf6', '#7c3aed']}
+            style={[StyleSheet.absoluteFillObject, styles.headerOverlay]}
+          >
+            <View style={styles.headerTop}>
+              <TouchableOpacity 
+                style={styles.backButton}
+                onPress={() => navigation.goBack()}
+              >
+                <Ionicons name="arrow-back" size={24} color="white" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.headerMain}>
+              <View style={styles.headerIcon}>
+                <Ionicons name="shield-checkmark" size={32} color="white" />
+              </View>
+              <View style={styles.headerText}>
+                <Text style={styles.headerTitle}>Kalshi Predictions</Text>
+                <Text style={styles.headerSubtitle}>Error loading predictions</Text>
+              </View>
+            </View>
+          </LinearGradient>
+        </View>
+        
+        <ScrollView>
+          <View style={styles.errorContainer}>
+            <Ionicons name="warning" size={48} color="#ef4444" />
+            <Text style={styles.errorTitle}>Error Loading Predictions</Text>
+            <Text style={styles.errorText}>{displayError}</Text>
+            <TouchableOpacity 
+              style={styles.retryButton}
+              onPress={handleRefresh}
+            >
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+          
+          <KalshiNewsFeed newsItems={kalshiNews} />
+          <KalshiContractExplainer />
+        </ScrollView>
       </View>
     );
   }
@@ -1484,15 +1430,6 @@ const { searchHistory, addToSearchHistory, clearSearchHistory } = useSearch();
             
             <View style={styles.headerControls}>
               <TouchableOpacity 
-                style={styles.apiToggle}
-                onPress={() => setUseRealApi(!useRealApi)}
-              >
-                <Text style={styles.apiToggleText}>
-                  {useRealApi ? '🌐 Live API' : '🤖 Mock Data'}
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
                 style={styles.headerSearchButton}
                 onPress={() => setShowSearch(true)}
               >
@@ -1507,87 +1444,105 @@ const { searchHistory, addToSearchHistory, clearSearchHistory } = useSearch();
             </View>
             <View style={styles.headerText}>
               <Text style={styles.headerTitle}>Kalshi Predictions</Text>
-              <Text style={styles.headerSubtitle}>CFTC-regulated prediction markets • 50-state legal[citation:3]</Text>
+              <Text style={styles.headerSubtitle}>
+                {predictions.length} CFTC-regulated markets • 50-state legal[citation:3]
+              </Text>
             </View>
+            <TouchableOpacity 
+              onPress={handleRefresh} 
+              disabled={refreshing || apiLoading}
+              style={{ padding: 8 }}
+            >
+              {refreshing || apiLoading ? (
+                <ActivityIndicator size={24} color="white" />
+              ) : (
+                <Ionicons name="refresh" size={24} color="white" />
+              )}
+            </TouchableOpacity>
           </View>
         </LinearGradient>
       </View>
 
-      {/* ADDED: Search Section */}
-      <View style={styles.searchSection}>
-        {renderSearchBar()}
-        {renderSearchResultsInfo()}
-      </View>
-
-      {/* ADDED: Backend error display */}
-      {backendError && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>
-            Backend Error: {backendError}. Using sample data.
+      {/* Debug Info Banner (only in development) */}
+      {__DEV__ && (
+        <View style={styles.debugContainer}>
+          <Text style={styles.debugText}>
+            🔍 Debug: Showing {predictions.length} predictions ({predictions === MOCK_KALSHI_PREDICTIONS ? 'MOCK DATA' : 'REAL API DATA via hook'})
           </Text>
+          <TouchableOpacity 
+            onPress={() => console.log('Current predictions:', predictions)}
+          >
+            <Text style={styles.debugButton}>Log Data</Text>
+          </TouchableOpacity>
         </View>
       )}
 
-      {/* Generation Counter */}
-      <View style={styles.counterContainer}>
-        <View style={styles.counterHeader}>
-          <Ionicons name="flash" size={20} color="#8b5cf6" />
-          <Text style={styles.counterTitle}>Daily AI Predictions</Text>
-        </View>
-        
-        <View style={styles.counterContent}>
-          {generateCounter.hasPremiumAccess ? (
-            <LinearGradient
-              colors={['#10b981', '#059669']}
-              style={styles.premiumBadge}
-            >
-              <Ionicons name="infinite" size={20} color="white" />
-              <Text style={styles.premiumText}>Premium: Unlimited Kalshi Predictions</Text>
-            </LinearGradient>
-          ) : (
-            <>
-              <View style={styles.counterInfo}>
-                <Text style={styles.counterLabel}>Free prediction today:</Text>
-                <View style={styles.counterDisplay}>
-                  <Text style={styles.counterNumber}>{generateCounter.remainingGenerations}</Text>
-                  <Text style={styles.counterTotal}>/1</Text>
-                </View>
-                {generateCounter.purchasedGenerations > 0 && (
-                  <View style={styles.purchasedBadge}>
-                    <Text style={styles.purchasedText}>
-                      +{generateCounter.purchasedGenerations} purchased
-                    </Text>
-                  </View>
-                )}
-              </View>
-              
-              <View style={styles.progressBar}>
-                <View 
-                  style={[
-                    styles.progressFill, 
-                    { width: `${(generateCounter.remainingGenerations / 1) * 100}%` }
-                  ]} 
-                />
-              </View>
-              
-              <Text style={styles.counterHint}>
-                Resets daily at midnight. Purchase additional predictions below.
-              </Text>
-            </>
-          )}
-        </View>
+      {/* Search Section */}
+      <View style={styles.searchSection}>
+        {renderSearchBar()}
+        {renderSearchResultsInfo()}
       </View>
 
       <ScrollView
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={loadPredictions}
+            onRefresh={handleRefresh}
             colors={['#8b5cf6']}
             tintColor="#8b5cf6"
           />
         }
       >
+        {/* Generation Counter */}
+        <View style={styles.counterContainer}>
+          <View style={styles.counterHeader}>
+            <Ionicons name="flash" size={20} color="#8b5cf6" />
+            <Text style={styles.counterTitle}>Daily AI Predictions</Text>
+          </View>
+          
+          <View style={styles.counterContent}>
+            {generateCounter.hasPremiumAccess ? (
+              <LinearGradient
+                colors={['#10b981', '#059669']}
+                style={styles.premiumBadge}
+              >
+                <Ionicons name="infinite" size={20} color="white" />
+                <Text style={styles.premiumText}>Premium: Unlimited Kalshi Predictions</Text>
+              </LinearGradient>
+            ) : (
+              <>
+                <View style={styles.counterInfo}>
+                  <Text style={styles.counterLabel}>Free prediction today:</Text>
+                  <View style={styles.counterDisplay}>
+                    <Text style={styles.counterNumber}>{generateCounter.remainingGenerations}</Text>
+                    <Text style={styles.counterTotal}>/1</Text>
+                  </View>
+                  {generateCounter.purchasedGenerations > 0 && (
+                    <View style={styles.purchasedBadge}>
+                      <Text style={styles.purchasedText}>
+                        +{generateCounter.purchasedGenerations} purchased
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                
+                <View style={styles.progressBar}>
+                  <View 
+                    style={[
+                      styles.progressFill, 
+                      { width: `${(generateCounter.remainingGenerations / 1) * 100}%` }
+                    ]} 
+                  />
+                </View>
+                
+                <Text style={styles.counterHint}>
+                  Resets daily at midnight. Purchase additional predictions below.
+                </Text>
+              </>
+            )}
+          </View>
+        </View>
+
         {/* Market News Feed */}
         <KalshiNewsFeed newsItems={kalshiNews} />
 
@@ -1629,12 +1584,14 @@ const { searchHistory, addToSearchHistory, clearSearchHistory } = useSearch();
           </View>
         </ScrollView>
 
-        {/* ADDED: Debug display */}
-        <View style={{paddingHorizontal: 16, marginBottom: 8}}>
-          <Text style={{color: 'white', fontSize: 12}}>
-            DEBUG: Search = "{searchQuery}", Market Filter = "{selectedMarket}"
-          </Text>
-        </View>
+        {/* Debug display */}
+        {__DEV__ && (
+          <View style={{paddingHorizontal: 16, marginBottom: 8}}>
+            <Text style={{color: 'white', fontSize: 12}}>
+              DEBUG: Search = "{searchQuery}", Market Filter = "{selectedMarket}"
+            </Text>
+          </View>
+        )}
 
         {/* Generate Prediction Section */}
         <View style={styles.generateSection}>
@@ -1655,7 +1612,7 @@ const { searchHistory, addToSearchHistory, clearSearchHistory } = useSearch();
             showsHorizontalScrollIndicator={false}
             style={styles.promptsScroll}
           >
-            {kalshiPrompts.slice(0, 10).map((prompt, index) => (
+            {kalshiPrompts.slice(0, 5).map((prompt, index) => (
               <TouchableOpacity
                 key={index}
                 style={styles.promptChip}
@@ -1845,18 +1802,115 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0f172a',
   },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  
+  // Error styles
+  errorContainer: {
     alignItems: 'center',
-    backgroundColor: '#0f172a',
+    padding: 30,
+    margin: 20,
+    backgroundColor: '#1e293b',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#334155',
   },
-  loadingText: {
-    marginTop: 15,
-    fontSize: 18,
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#f1f5f9',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  errorText: {
+    fontSize: 14,
     color: '#cbd5e1',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  
+  // Debug styles
+  debugContainer: {
+    backgroundColor: '#1d4ed8',
+    padding: 12,
+    marginHorizontal: 20,
+    marginTop: 10,
+    borderRadius: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  debugText: {
+    color: 'white',
+    fontSize: 12,
+    flex: 1,
+  },
+  debugButton: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginLeft: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 4,
+  },
+  
+  // Search and Filter styles
+  searchSection: {
+    marginHorizontal: 20,
+    marginTop: 16,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    marginBottom: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#1f2937',
+    paddingVertical: 8,
+  },
+  searchButton: {
+    padding: 8,
+  },
+  searchResultsInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  searchResultsText: {
+    fontSize: 13,
+    color: '#475569',
     fontWeight: '500',
   },
+  clearSearchText: {
+    fontSize: 13,
+    color: '#8b5cf6',
+    fontWeight: '600',
+  },
+  
+  // Header styles
   header: {
     paddingHorizontal: 16,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
@@ -1877,18 +1931,6 @@ const styles = StyleSheet.create({
   headerControls: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  apiToggle: {
-    backgroundColor: 'rgba(30, 41, 59, 0.9)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 15,
-    marginRight: 10,
-  },
-  apiToggleText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: '600',
   },
   backButton: {
     padding: 8,
@@ -1937,62 +1979,7 @@ const styles = StyleSheet.create({
     marginTop: 5,
     fontWeight: '500',
   },
-  // ADDED: Search Styles
-  searchSection: {
-    marginTop: 16,
-    paddingHorizontal: 20,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    marginBottom: 12,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: '#1f2937',
-    paddingVertical: 8,
-  },
-  searchButton: {
-    padding: 8,
-  },
-  searchResultsInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#f1f5f9',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  searchResultsText: {
-    fontSize: 13,
-    color: '#475569',
-    fontWeight: '500',
-  },
-  clearSearchText: {
-    fontSize: 13,
-    color: '#8b5cf6',
-    fontWeight: '600',
-  },
-  errorContainer: {
-    backgroundColor: '#fef2f2',
-    borderColor: '#fecaca',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    margin: 16,
-  },
-  errorText: {
-    color: '#dc2626',
-    fontSize: 12,
-  },
+  
   counterContainer: {
     backgroundColor: '#1e293b',
     borderRadius: 15,
@@ -2568,7 +2555,7 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontWeight: '600',
   },
-  // ADDED: Floating Search Button
+  // Floating Search Button
   floatingSearchButton: {
     position: 'absolute',
     bottom: 100,

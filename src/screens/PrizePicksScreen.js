@@ -1,5 +1,4 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-// src/screens/PrizePicksScreen.js - UPDATED FOR 3 WINNERS PER SELECTION, 2 SELECTIONS PER DAY
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -11,11 +10,9 @@ import {
   ActivityIndicator,
   RefreshControl,
   Dimensions,
-  TextInput,
   Modal,
   Platform,
   Alert,
-  Clipboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,1179 +23,456 @@ import SearchBar from '../components/SearchBar';
 import { useSearch } from '../providers/SearchProvider';
 import isExpoGo from '../utils/isExpoGo';
 
-let Purchases;
-if (isExpoGo()) {
-  Purchases = {
-    getCustomerInfo: () => Promise.resolve({ 
-      entitlements: { active: {}, all: {} } 
-    }),
-    purchasePackage: () => Promise.reject(new Error('Mock purchase - Expo Go')),
-    purchaseProduct: () => Promise.reject(new Error('Mock purchase - Expo Go')),
-    restorePurchases: () => Promise.resolve({ 
-      entitlements: { active: {}, all: {} } 
-    }),
-  };
-} else {
-  try {
-    Purchases = require('react-native-purchases').default;
-  } catch (error) {
-    Purchases = {
-      getCustomerInfo: () => Promise.resolve({ 
-        entitlements: { active: {}, all: {} } 
-      }),
-      purchasePackage: () => Promise.reject(new Error('RevenueCat not available')),
-      purchaseProduct: () => Promise.reject(new Error('RevenueCat not available')),
-      restorePurchases: () => Promise.resolve({ 
-        entitlements: { active: {}, all: {} } 
-      }),
-    };
-  }
-}
-
 const { width } = Dimensions.get('window');
 
-// Updated Daily PrizePicks Generator Box Component - Now with 3 winners per selection
-const DailyPrizePicksGenerator = ({ onGenerate, isGenerating, selectionsLeft }) => {
-  const [generatedToday, setGeneratedToday] = useState(false);
-  const [dailySelections, setDailySelections] = useState([]);
-  const [todaySelections, setTodaySelections] = useState([]);
+// Player Prop Interface matching the web app
+interface PlayerProp {
+  player_name: string;
+  prop_type: string;
+  line: number;
+  over_price: number | null;
+  under_price: number | null;
+  bookmaker: string;
+  game: string;
+  sport: string;
+  last_update: string;
+  id?: string;
+}
 
-  useEffect(() => {
-    checkDailyGeneration();
-    loadTodaySelections();
-  }, []);
+// API configuration
+const API_BASE_URL = 'https://pleasing-determination-production.up.railway.app';
 
-  const loadTodaySelections = async () => {
-    try {
-      const today = new Date().toDateString();
-      const savedSelections = await AsyncStorage.getItem(`prizepicks_${today}`);
-      if (savedSelections) {
-        setTodaySelections(JSON.parse(savedSelections));
-      }
-    } catch (error) {
-      console.error('Error loading today selections:', error);
-    }
-  };
+// Alternative endpoints for fallback
+const ENDPOINTS_TO_TRY = [
+  { path: '/api/prizepicks/selections', name: 'Selections', priority: 1 },
+  { path: '/api/prizepicks/picks', name: 'Picks', priority: 2 },
+  { path: '/api/picks/prizepicks', name: 'Picks (alt)', priority: 3 },
+  { path: '/api/prize-picks', name: 'Prize-Picks', priority: 4 },
+  { path: '/api/prizepicks', name: 'Root', priority: 5 },
+];
 
-  const checkDailyGeneration = async () => {
-    try {
-      const today = new Date().toDateString();
-      const generationData = await AsyncStorage.getItem('prizepicks_daily_generation');
-      if (generationData) {
-        const { date, selections } = JSON.parse(generationData);
-        setGeneratedToday(date === today);
-        if (date === today) {
-          setDailySelections(selections || []);
-        }
-      }
-    } catch (error) {
-      console.error('Error checking daily generation:', error);
-    }
-  };
-
-  const generateDailySelections = () => {
-    // Each selection now contains 3 winners
-    const selections = [
-      {
-        id: 1,
-        type: '3-Winner Parlay',
-        sport: 'NBA',
-        title: 'NBA Triple Threat',
-        confidence: 88,
-        winners: [
-          { name: 'Luka Dončić Over 32.5 Points', odds: '-145', probability: '72%' },
-          { name: 'Nikola Jokić Over 9.5 Assists', odds: '-120', probability: '68%' },
-          { name: 'Jayson Tatum Over 27.5 Points', odds: '-110', probability: '65%' }
-        ],
-        analysis: 'PrizePicks lines showing value vs sportsbook consensus across all three picks.',
-        totalOdds: '+400',
-        probability: '35%',
-        keyStat: 'Combined edge score: 8.5/10',
-        trend: 'NBA parlays hit 60% last 30 days',
-        timestamp: 'Today • 7:30 PM ET',
-        edgeScore: 8.5,
-        bumpRisk: 'Medium',
-        payoutMultiplier: '5x'
-      },
-      {
-        id: 2,
-        type: '3-Winner Flex Play',
-        sport: 'NFL',
-        title: 'NFL Sunday Trio',
-        confidence: 85,
-        winners: [
-          { name: 'Christian McCaffrey Over 115.5 Yds', odds: '-155', probability: '68%' },
-          { name: 'Josh Allen Over 2.5 TDs', odds: '+120', probability: '42%' },
-          { name: 'Tyreek Hill Over 99.5 Rec Yds', odds: '-130', probability: '58%' }
-        ],
-        analysis: 'High-value NFL player props with low correlation for optimal parlay construction.',
-        totalOdds: '+600',
-        probability: '28%',
-        keyStat: 'PrizePicks vs Book diff: 2.1 points average',
-        trend: 'Flex plays hit 45% last month',
-        timestamp: 'Tomorrow • 1:00 PM ET',
-        edgeScore: 7.8,
-        bumpRisk: 'Low',
-        payoutMultiplier: '7x'
-      },
-      {
-        id: 3,
-        type: '3-Winner Power Play',
-        sport: 'MLB',
-        title: 'MLB Strikeout Special',
-        confidence: 82,
-        winners: [
-          { name: 'Spencer Strider Over 8.5 Ks', odds: '-140', probability: '60%' },
-          { name: 'Gerrit Cole Over 7.5 Ks', odds: '-120', probability: '55%' },
-          { name: 'Blake Snell Over 6.5 Ks', odds: '+100', probability: '48%' }
-        ],
-        analysis: 'Three power pitchers facing high-strikeout lineups. PrizePicks lines undervalued.',
-        totalOdds: '+550',
-        probability: '30%',
-        keyStat: 'Combined K/9: 12.8 vs league avg 8.9',
-        trend: 'Strikeout props hit 52% this season',
-        timestamp: 'Tonight • 7:05 PM ET',
-        edgeScore: 7.2,
-        bumpRisk: 'High',
-        payoutMultiplier: '6.5x'
-      }
-    ];
-    return selections;
-  };
-
-  const handleGenerate = async () => {
-    const today = new Date().toDateString();
-    const newSelections = generateDailySelections();
-    
-    // Save generation data
-    await AsyncStorage.setItem('prizepicks_daily_generation', JSON.stringify({
-      date: today,
-      selections: newSelections
-    }));
-    
-    // Save individual selections for tracking
-    await AsyncStorage.setItem(`prizepicks_${today}`, JSON.stringify(newSelections));
-    
-    setDailySelections(newSelections);
-    setGeneratedToday(true);
-    onGenerate?.();
-    
-    Alert.alert(
-      'PrizePicks Generated!',
-      `3 high-edge PrizePicks selections have been generated for today. Each selection contains 3 winners. You have ${selectionsLeft - 1} selection(s) left today.`,
-      [{ text: 'OK', style: 'default' }]
-    );
-  };
-
-  const renderWinnerItem = (winner, index) => (
-    <View key={index} style={generatorStyles.winnerItem}>
-      <View style={generatorStyles.winnerHeader}>
-        <View style={generatorStyles.winnerIndex}>
-          <Text style={generatorStyles.winnerIndexText}>#{index + 1}</Text>
-        </View>
-        <Text style={generatorStyles.winnerName} numberOfLines={2}>{winner.name}</Text>
-      </View>
-      <View style={generatorStyles.winnerOdds}>
-        <Text style={generatorStyles.winnerOddsText}>{winner.odds}</Text>
-        <Text style={generatorStyles.winnerProbability}>{winner.probability}</Text>
-      </View>
-    </View>
-  );
-
-  const renderSelectionItem = (selection) => (
-    <View key={selection.id} style={generatorStyles.selectionItem}>
-      <View style={generatorStyles.selectionHeader}>
-        <View style={generatorStyles.typeContainer}>
-          <View style={[
-            generatorStyles.typeBadge,
-            generatorStyles.threeWinnerBadge
-          ]}>
-            <Text style={generatorStyles.typeText}>{selection.type}</Text>
-          </View>
-          <View style={[
-            generatorStyles.sportBadge,
-            selection.sport === 'NBA' ? generatorStyles.nbaBadge :
-            selection.sport === 'NFL' ? generatorStyles.nflBadge :
-            generatorStyles.mlbBadge
-          ]}>
-            <Text style={generatorStyles.sportText}>{selection.sport}</Text>
-          </View>
-        </View>
-        <View style={[
-          generatorStyles.confidenceBadge,
-          selection.confidence >= 85 ? generatorStyles.highConfidence :
-          selection.confidence >= 75 ? generatorStyles.mediumConfidence :
-          generatorStyles.lowConfidence
-        ]}>
-          <Text style={generatorStyles.confidenceText}>{selection.confidence}%</Text>
-        </View>
-      </View>
-      
-      <Text style={generatorStyles.selectionTitle}>{selection.title}</Text>
-      
-      {/* Display 3 winners */}
-      <View style={generatorStyles.winnersContainer}>
-        <Text style={generatorStyles.winnersTitle}>🎯 3-Winner Combo:</Text>
-        {selection.winners.map((winner, index) => renderWinnerItem(winner, index))}
-      </View>
-      
-      <View style={generatorStyles.statsRow}>
-        <View style={generatorStyles.statBox}>
-          <Text style={generatorStyles.statLabel}>Total Odds</Text>
-          <Text style={[generatorStyles.statValue, {color: '#10b981'}]}>
-            {selection.totalOdds}
-          </Text>
-        </View>
-        <View style={generatorStyles.statBox}>
-          <Text style={generatorStyles.statLabel}>Payout</Text>
-          <Text style={generatorStyles.statValue}>{selection.payoutMultiplier}</Text>
-        </View>
-        <View style={generatorStyles.statBox}>
-          <Text style={generatorStyles.statLabel}>Edge Score</Text>
-          <Text style={generatorStyles.statValue}>{selection.edgeScore}/10</Text>
-        </View>
-      </View>
-      
-      <Text style={generatorStyles.analysisText}>{selection.analysis}</Text>
-      
-      <View style={generatorStyles.footerRow}>
-        <View style={[
-          generatorStyles.bumpRiskBadge,
-          selection.bumpRisk === 'High' ? generatorStyles.highBumpRisk :
-          selection.bumpRisk === 'Medium' ? generatorStyles.mediumBumpRisk :
-          generatorStyles.lowBumpRisk
-        ]}>
-          <Ionicons name={selection.bumpRisk === 'High' ? "warning" : "shield-checkmark"} size={12} color="white" />
-          <Text style={generatorStyles.bumpRiskText}>Bump Risk: {selection.bumpRisk}</Text>
-        </View>
-        <Text style={generatorStyles.timestamp}>{selection.timestamp}</Text>
-      </View>
-      
-      <View style={generatorStyles.trendBadge}>
-        <Ionicons name="trending-up" size={12} color="#059669" />
-        <Text style={generatorStyles.trendText}>{selection.trend}</Text>
-      </View>
-    </View>
-  );
-
-  return (
-    <View style={generatorStyles.container}>
-      <LinearGradient
-        colors={['#1e293b', '#0f172a']}
-        style={generatorStyles.gradient}
-      >
-        <View style={generatorStyles.header}>
-          <View style={generatorStyles.headerLeft}>
-            <View style={generatorStyles.iconContainer}>
-              <Ionicons name="trophy" size={20} color="#3b82f6" />
-              <View style={generatorStyles.selectionCountBadge}>
-                <Text style={generatorStyles.selectionCountText}>{selectionsLeft}/2</Text>
-              </View>
-            </View>
-            <View>
-              <Text style={generatorStyles.title}>Daily PrizePicks Generator</Text>
-              <Text style={generatorStyles.subtitle}>3 winners per selection • 2 selections per day</Text>
-            </View>
-          </View>
-          
-          <TouchableOpacity 
-            style={[
-              generatorStyles.generateButton,
-              (generatedToday || isGenerating || selectionsLeft <= 0) && generatorStyles.generateButtonDisabled
-            ]}
-            onPress={handleGenerate}
-            disabled={generatedToday || isGenerating || selectionsLeft <= 0}
-          >
-            <LinearGradient
-              colors={
-                selectionsLeft <= 0 ? ['#475569', '#64748b'] :
-                generatedToday ? ['#334155', '#475569'] : 
-                ['#3b82f6', '#1d4ed8']
-              }
-              style={generatorStyles.generateButtonGradient}
-            >
-              {isGenerating ? (
-                <ActivityIndicator size="small" color="white" />
-              ) : (
-                <>
-                  <Ionicons 
-                    name={
-                      selectionsLeft <= 0 ? "time" :
-                      generatedToday ? "checkmark-circle" : "sparkles"
-                    } 
-                    size={16} 
-                    color="white" 
-                  />
-                  <Text style={generatorStyles.generateButtonText}>
-                    {selectionsLeft <= 0 ? 'Limit Reached' :
-                     generatedToday ? 'Generated Today' : 'Generate Selections'}
-                  </Text>
-                </>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-        
-        {selectionsLeft <= 0 && (
-          <View style={generatorStyles.limitWarning}>
-            <Ionicons name="alert-circle" size={16} color="#f59e0b" />
-            <Text style={generatorStyles.limitWarningText}>
-              Daily limit reached. Come back tomorrow for 2 more selections.
-            </Text>
-          </View>
-        )}
-        
-        {dailySelections.length > 0 ? (
-          <View style={generatorStyles.selectionsContainer}>
-            {dailySelections.slice(0, 2).map(renderSelectionItem)}
-          </View>
-        ) : (
-          <View style={generatorStyles.emptyContainer}>
-            <View style={generatorStyles.emptyIcon}>
-              <Ionicons name="trophy-outline" size={40} color="#475569" />
-              <View style={generatorStyles.threeBadge}>
-                <Text style={generatorStyles.threeBadgeText}>3</Text>
-              </View>
-            </View>
-            <Text style={generatorStyles.emptyText}>No PrizePicks generated yet</Text>
-            <Text style={generatorStyles.emptySubtext}>
-              Each selection contains 3 winners. Generate {selectionsLeft} more selection(s) today.
-            </Text>
-          </View>
-        )}
-        
-        <View style={generatorStyles.footer}>
-          <Ionicons name="analytics" size={12} color="#3b82f6" />
-          <Text style={generatorStyles.footerText}>
-            • 3 winners per selection • 2 selections daily • Line discrepancy analysis
-          </Text>
-        </View>
-      </LinearGradient>
-    </View>
-  );
-};
-
-const generatorStyles = StyleSheet.create({
-  container: {
-    borderRadius: 20,
-    overflow: 'hidden',
-    marginHorizontal: 20,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  gradient: {
-    padding: 20,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  iconContainer: {
-    backgroundColor: '#3b82f620',
-    width: 50,
-    height: 50,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-    position: 'relative',
-  },
-  selectionCountBadge: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    backgroundColor: '#ef4444',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#1e293b',
-  },
-  selectionCountText: {
-    color: 'white',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  subtitle: {
-    fontSize: 12,
-    color: '#94a3b8',
-    marginTop: 2,
-  },
-  generateButton: {
-    borderRadius: 15,
-    overflow: 'hidden',
-    marginLeft: 15,
-  },
-  generateButtonDisabled: {
-    opacity: 0.7,
-  },
-  generateButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 15,
-  },
-  generateButtonText: {
-    color: 'white',
-    fontSize: 13,
-    fontWeight: '600',
-    marginLeft: 6,
-  },
-  limitWarning: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    padding: 10,
-    borderRadius: 10,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#f59e0b30',
-  },
-  limitWarningText: {
-    fontSize: 12,
-    color: '#f59e0b',
-    marginLeft: 8,
-    flex: 1,
-  },
-  selectionsContainer: {
-    gap: 15,
-  },
-  selectionItem: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 15,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  selectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  typeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  typeBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  threeWinnerBadge: {
-    backgroundColor: '#8b5cf620',
-    borderWidth: 1,
-    borderColor: '#8b5cf640',
-  },
-  typeText: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: '#cbd5e1',
-  },
-  sportBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  nbaBadge: {
-    backgroundColor: '#ef444420',
-    borderWidth: 1,
-    borderColor: '#ef444440',
-  },
-  nflBadge: {
-    backgroundColor: '#05966920',
-    borderWidth: 1,
-    borderColor: '#05966940',
-  },
-  mlbBadge: {
-    backgroundColor: '#f59e0b20',
-    borderWidth: 1,
-    borderColor: '#f59e0b40',
-  },
-  sportText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#e2e8f0',
-  },
-  confidenceBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
-  highConfidence: {
-    backgroundColor: '#10b981',
-  },
-  mediumConfidence: {
-    backgroundColor: '#3b82f6',
-  },
-  lowConfidence: {
-    backgroundColor: '#f59e0b',
-  },
-  confidenceText: {
-    color: 'white',
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  selectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 12,
-  },
-  winnersContainer: {
-    backgroundColor: 'rgba(30, 41, 59, 0.8)',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-  },
-  winnersTitle: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#3b82f6',
-    marginBottom: 8,
-  },
-  winnerItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-  },
-  winnerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  winnerIndex: {
-    backgroundColor: '#3b82f6',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  winnerIndexText: {
-    color: 'white',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  winnerName: {
-    fontSize: 13,
-    color: '#e2e8f0',
-    flex: 1,
-  },
-  winnerOdds: {
-    alignItems: 'flex-end',
-  },
-  winnerOddsText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#10b981',
-  },
-  winnerProbability: {
-    fontSize: 10,
-    color: '#94a3b8',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    backgroundColor: 'rgba(30, 41, 59, 0.8)',
-    borderRadius: 10,
-    padding: 12,
-  },
-  statBox: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statLabel: {
-    fontSize: 10,
-    color: '#94a3b8',
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    fontWeight: '600',
-  },
-  statValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  analysisText: {
-    fontSize: 14,
-    color: '#cbd5e1',
-    lineHeight: 20,
-    marginBottom: 12,
-    fontStyle: 'italic',
-  },
-  footerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  bumpRiskBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  highBumpRisk: {
-    backgroundColor: '#ef4444',
-  },
-  mediumBumpRisk: {
-    backgroundColor: '#f59e0b',
-  },
-  lowBumpRisk: {
-    backgroundColor: '#10b981',
-  },
-  bumpRiskText: {
-    fontSize: 11,
-    color: 'white',
-    fontWeight: '600',
-    marginLeft: 5,
-  },
-  timestamp: {
-    fontSize: 11,
-    color: '#64748b',
-  },
-  trendBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#05966920',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-  },
-  trendText: {
-    fontSize: 11,
-    color: '#059669',
-    fontWeight: '600',
-    marginLeft: 5,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    padding: 30,
-  },
-  emptyIcon: {
-    position: 'relative',
-    marginBottom: 15,
-  },
-  threeBadge: {
-    position: 'absolute',
-    bottom: -5,
-    right: -5,
-    backgroundColor: '#3b82f6',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#1e293b',
-  },
-  threeBadgeText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#94a3b8',
-    fontWeight: '600',
-    marginTop: 15,
-  },
-  emptySubtext: {
-    fontSize: 13,
-    color: '#64748b',
-    marginTop: 5,
-    textAlign: 'center',
-  },
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 20,
-    paddingTop: 15,
-    borderTopWidth: 1,
-    borderTopColor: '#334155',
-  },
-  footerText: {
-    fontSize: 11,
-    color: '#94a3b8',
-    marginLeft: 8,
-    flex: 1,
-  },
-});
-
-// Main PrizePicks Screen Component - Updated for new requirements
+// Main PrizePicks Screen Component - Updated for real player props
 export default function PrizePicksScreen() {
   const navigation = useAppNavigation();
   const { searchHistory, addToSearchHistory } = useSearch();
   
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [selections, setSelections] = useState([]);
-  const [filteredSelections, setFilteredSelections] = useState([]);
-  const [selectedLeague, setSelectedLeague] = useState('All');
+  const [sport, setSport] = useState<'nba' | 'nfl' | 'mlb'>('nba');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
-  const [customQuery, setCustomQuery] = useState('');
-  const [simulating, setSimulating] = useState(false);
-  const [showSimulationModal, setShowSimulationModal] = useState(false);
   const [selectedTimeframe, setSelectedTimeframe] = useState('Today');
-  const [generatingSelections, setGeneratingSelections] = useState(false);
-  const [dailySelectionsLeft, setDailySelectionsLeft] = useState(2);
-  const [todaySelections, setTodaySelections] = useState([]);
+  const [selectedLeague, setSelectedLeague] = useState('All');
+  const [showSnackbar, setShowSnackbar] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [snackbarType, setSnackbarType] = useState<'info' | 'success' | 'warning' | 'error'>('info');
   
-  // Development data
-  const mockSelections = [
-    {
-      id: '1',
-      type: '3-Winner Parlay',
-      sport: 'NBA',
-      title: 'NBA Star Power Trio',
-      confidence: 88,
-      winners: [
-        { player: 'Luka Dončić', pick: 'Over 32.5 Points', odds: '-145' },
-        { player: 'Nikola Jokić', pick: 'Over 9.5 Assists', odds: '-120' },
-        { player: 'Jayson Tatum', pick: 'Over 27.5 Points', odds: '-110' }
-      ],
-      totalOdds: '+400',
-      analysis: 'Three MVP candidates with favorable matchups. PrizePicks lines undervalued vs sportsbook consensus.',
-      timestamp: 'Today, 7:30 PM ET',
-      model: 'Line Discrepancy Model',
-      modelAccuracy: '82.4%',
-      edgeScore: 8.2,
-      bumpRisk: 'Medium',
-      payoutMultiplier: '5x',
-      requiresPremium: false,
-    },
-    {
-      id: '2',
-      type: '3-Winner Flex Play',
-      sport: 'NFL',
-      title: 'NFL Sunday Special',
-      confidence: 85,
-      winners: [
-        { player: 'Christian McCaffrey', pick: 'Over 115.5 Yds', odds: '-155' },
-        { player: 'Josh Allen', pick: 'Over 2.5 TDs', odds: '+120' },
-        { player: 'Tyreek Hill', pick: 'Over 99.5 Rec Yds', odds: '-130' }
-      ],
-      totalOdds: '+600',
-      analysis: 'High-value NFL player props with low correlation for optimal parlay construction.',
-      timestamp: 'Tomorrow, 1:00 PM ET',
-      model: 'Matchup Analysis',
-      modelAccuracy: '78.2%',
-      edgeScore: 7.8,
-      bumpRisk: 'Low',
-      payoutMultiplier: '7x',
-      requiresPremium: true,
-    },
-    {
-      id: '3',
-      type: '3-Winner Power Play',
-      sport: 'MLB',
-      title: 'Strikeout Kings',
-      confidence: 82,
-      winners: [
-        { player: 'Spencer Strider', pick: 'Over 8.5 Ks', odds: '-140' },
-        { player: 'Gerrit Cole', pick: 'Over 7.5 Ks', odds: '-120' },
-        { player: 'Blake Snell', pick: 'Over 6.5 Ks', odds: '+100' }
-      ],
-      totalOdds: '+550',
-      analysis: 'Three power pitchers facing high-strikeout lineups. PrizePicks lines undervalued.',
-      timestamp: 'Tonight, 7:05 PM ET',
-      model: 'Statistical Model',
-      modelAccuracy: '76.8%',
-      edgeScore: 7.2,
-      bumpRisk: 'High',
-      payoutMultiplier: '6.5x',
-      requiresPremium: false,
-    },
-    {
-      id: '4',
-      type: '3-Winner Parlay',
-      sport: 'NBA',
-      title: 'Defensive Dominance',
-      confidence: 79,
-      winners: [
-        { player: 'Anthony Davis', pick: 'Over 11.5 Rebounds', odds: '-110' },
-        { player: 'Jaren Jackson Jr.', pick: 'Over 2.5 Blocks', odds: '+150' },
-        { player: 'Bam Adebayo', pick: 'Over 20.5 Points', odds: '-115' }
-      ],
-      totalOdds: '+700',
-      analysis: 'Three big men with elite defensive matchups. PrizePicks lines haven\'t adjusted for recent trends.',
-      timestamp: 'Today, 8:00 PM ET',
-      model: 'Defensive Matchup',
-      modelAccuracy: '71.5%',
-      edgeScore: 6.8,
-      bumpRisk: 'Medium',
-      payoutMultiplier: '8x',
-      requiresPremium: false,
-    },
-  ];
-
-  const selectionQueries = [
-    "Generate NBA 3-winner parlays",
-    "Best NFL trios this week",
-    "High edge PrizePicks with 3 winners",
-    "Generate PrizePicks parlays with +EV",
-    "Today's 3-winner line discrepancies",
-    "Generate same-sport PrizePicks trios",
-    "3-winner parlays with low bump risk",
-    "Generate PrizePicks for player props",
-    "PrizePicks underdog trios",
-    "Generate PrizePicks power plays"
-  ];
+  // State management
+  const [playerProps, setPlayerProps] = useState<PlayerProp[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [analytics, setAnalytics] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [filteredProps, setFilteredProps] = useState<PlayerProp[]>([]);
+  const [activeEndpoint, setActiveEndpoint] = useState<string>('');
 
   useEffect(() => {
     logScreenView('PrizePicksScreen');
-    loadSelections();
-    checkAndResetDailyLimit();
-    loadTodaySelections();
-  }, []);
+    fetchPrizePicksData();
+    
+    // Auto-refresh every 2 minutes
+    const interval = setInterval(fetchPrizePicksData, 120000);
+    return () => clearInterval(interval);
+  }, [sport]);
 
-  const loadTodaySelections = async () => {
+  // Fetch PrizePicks data using unified API endpoint with fallbacks
+  const fetchPrizePicksData = async () => {
+    setLoading(true);
+    setRefreshing(true);
+    console.log('🎯 Fetching prize picks data...');
+    
     try {
-      const today = new Date().toDateString();
-      const savedSelections = await AsyncStorage.getItem(`prizepicks_${today}`);
-      if (savedSelections) {
-        setTodaySelections(JSON.parse(savedSelections));
-      }
-    } catch (error) {
-      console.error('Error loading today selections:', error);
-    }
-  };
-
-  const checkAndResetDailyLimit = async () => {
-    try {
-      const today = new Date().toDateString();
-      const lastReset = await AsyncStorage.getItem('lastPrizePicksReset');
-      const savedCount = await AsyncStorage.getItem('dailyPrizePicksUsed');
-
-      if (lastReset !== today) {
-        await AsyncStorage.setItem('dailyPrizePicksUsed', '0');
-        await AsyncStorage.setItem('lastPrizePicksReset', today);
-        setDailySelectionsLeft(2);
+      // Try primary endpoint first
+      const response = await fetch(
+        `${API_BASE_URL}/api/prizepicks/selections?sport=${sport}`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Primary endpoint response:', data);
+        
+        if (data.success) {
+          const props = data.data || data.selections || [];
+          setPlayerProps(props);
+          setActiveEndpoint(`/api/prizepicks/selections?sport=${sport}`);
+          setError(null);
+          
+          const count = data.count || props.length;
+          showMessage(`Successfully loaded ${count} ${sport.toUpperCase()} player props`, 'success');
+          console.log(`✅ Loaded ${count} player props for ${sport.toUpperCase()}`);
+        } else {
+          // Try alternative endpoints
+          await tryAlternativeEndpoints();
+        }
       } else {
-        const usedCount = parseInt(savedCount || '0');
-        setDailySelectionsLeft(Math.max(0, 2 - usedCount));
+        // Try alternative endpoints
+        await tryAlternativeEndpoints();
       }
-    } catch (error) {
-      console.error('Error resetting daily limit:', error);
-    }
-  };
-
-  const loadSelections = async () => {
-    try {
-      setLoading(true);
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const filtered = selectedLeague === 'All' 
-        ? mockSelections 
-        : mockSelections.filter(sel => sel.sport === selectedLeague);
-      
-      setSelections(filtered);
-      setFilteredSelections(filtered);
+    } catch (error: any) {
+      console.error('❌ Primary endpoint failed:', error);
+      await tryAlternativeEndpoints();
+    } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  // Alternative endpoints fallback
+  const tryAlternativeEndpoints = async () => {
+    console.log('🔍 Trying alternative endpoints...');
+    
+    // Sort endpoints by priority
+    const sortedEndpoints = [...ENDPOINTS_TO_TRY].sort((a, b) => a.priority - b.priority);
+    
+    for (const endpoint of sortedEndpoints) {
+      try {
+        console.log(`🎯 Trying: ${endpoint.name} (${endpoint.path})`);
+        const response = await fetch(`${API_BASE_URL}${endpoint.path}?sport=${sport}`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log(`✅ Response from ${endpoint.name}:`, data);
+          
+          // Extract data from various possible structures
+          let extractedData: any[] = [];
+          const possibleProperties = ['data', 'picks', 'selections', 'items', 'results'];
+          
+          for (const prop of possibleProperties) {
+            if (Array.isArray(data[prop]) && data[prop].length > 0) {
+              extractedData = data[prop];
+              break;
+            }
+          }
+          
+          if (extractedData.length === 0 && Array.isArray(data)) {
+            extractedData = data;
+          }
+          
+          if (extractedData.length > 0) {
+            // Transform to PlayerProp format
+            const transformedData = extractedData.map((item: any, index: number) => ({
+              player_name: item.player_name || item.player || item.name || 'Unknown Player',
+              prop_type: item.prop_type || item.type || 'points',
+              line: item.line || item.projection || 0,
+              over_price: item.over_price || item.overOdds || null,
+              under_price: item.under_price || item.underOdds || null,
+              bookmaker: item.bookmaker || 'Unknown',
+              game: item.game || item.matchup || 'Unknown Game',
+              sport: item.sport || sport,
+              last_update: item.last_update || item.timestamp || new Date().toISOString(),
+              id: item.id || `pick-${Date.now()}-${index}`,
+            }));
+            
+            setPlayerProps(transformedData);
+            setActiveEndpoint(endpoint.path);
+            setError(null);
+            
+            showMessage(`Loaded ${transformedData.length} picks from ${endpoint.name}`, 'success');
+            console.log(`✅ Successfully loaded ${transformedData.length} picks`);
+            
+            return; // Stop trying endpoints
+          }
+        }
+      } catch (error) {
+        console.log(`❌ ${endpoint.name} failed:`, error);
+      }
+    }
+    
+    // If all endpoints fail
+    console.log('⚠️ All endpoints failed');
+    showMessage('Failed to load player props. Please check your connection.', 'error');
+    setError('Unable to load data from API endpoints');
+  };
+
+  // Fetch analytics data
+  const fetchPrizePicksAnalytics = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/prizepicks/analytics`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('📈 PrizePicks Analytics response:', data);
+        
+        if (data.success && data.analytics) {
+          let analyticsData: any[] = [];
+          
+          if (Array.isArray(data.analytics)) {
+            analyticsData = data.analytics;
+          } else if (typeof data.analytics === 'object') {
+            if (data.analytics.bySport && Array.isArray(data.analytics.bySport)) {
+              analyticsData.push(...data.analytics.bySport);
+            }
+            if (data.analytics.topPerformers && Array.isArray(data.analytics.topPerformers)) {
+              analyticsData.push(...data.analytics.topPerformers);
+            }
+            if (data.analytics.byPickType && Array.isArray(data.analytics.byPickType)) {
+              analyticsData.push(...data.analytics.byPickType);
+            }
+          }
+          
+          console.log(`✅ Extracted ${analyticsData.length} analytics items`);
+          setAnalytics(analyticsData);
+        }
+      }
+    } catch (err: any) {
+      console.error('❌ Error fetching PrizePicks analytics:', err);
+    }
+  };
+
+  // Load selections with filtering
+  const loadSelections = () => {
+    try {
+      const propsArray = Array.isArray(playerProps) ? playerProps : [];
+      
+      // Apply filters
+      let filtered = [...propsArray];
+      
+      if (selectedLeague !== 'All') {
+        filtered = filtered.filter(prop => 
+          prop.sport.toLowerCase() === selectedLeague.toLowerCase()
+        );
+      }
+      
+      if (searchQuery.trim()) {
+        const lowerQuery = searchQuery.toLowerCase();
+        filtered = filtered.filter(prop =>
+          prop.player_name.toLowerCase().includes(lowerQuery) ||
+          prop.game.toLowerCase().includes(lowerQuery) ||
+          prop.prop_type.toLowerCase().includes(lowerQuery) ||
+          prop.bookmaker.toLowerCase().includes(lowerQuery)
+        );
+      }
+      
+      setFilteredProps(filtered);
+      
     } catch (error) {
       console.error('Error loading selections:', error);
-      setLoading(false);
-      setRefreshing(false);
     }
   };
+
+  // Update filtered props when dependencies change
+  useEffect(() => {
+    loadSelections();
+  }, [playerProps, selectedLeague, searchQuery]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadSelections();
-    await checkAndResetDailyLimit();
-    await loadTodaySelections();
-    logAnalyticsEvent('prizepicks_refresh');
+    try {
+      await fetchPrizePicksData();
+      await fetchPrizePicksAnalytics();
+      
+      // Show success snackbar
+      showMessage('Data refreshed successfully', 'success');
+      logAnalyticsEvent('prizepicks_refresh');
+    } catch (error) {
+      console.error('Refresh error:', error);
+      showMessage('Failed to refresh data', 'error');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
-  const handleSearch = (query) => {
+  const handleSportChange = (newSport: 'nba' | 'nfl' | 'mlb') => {
+    setSport(newSport);
+    showMessage(`Loading ${newSport.toUpperCase()} player props...`, 'info');
+    logAnalyticsEvent('prizepicks_sport_change', { sport: newSport });
+  };
+
+  const handleSearch = (query: string) => {
     setSearchQuery(query);
     
     if (addToSearchHistory && typeof addToSearchHistory === 'function') {
       addToSearchHistory(query);
-    } else {
-      console.warn('addToSearchHistory is not available');
     }
     
-    if (!query.trim()) {
-      setFilteredSelections(selections);
-      return;
-    }
+    logAnalyticsEvent('prizepicks_search', { query, results: filteredProps.length });
+  };
 
-    const lowerQuery = query.toLowerCase();
-    const filtered = selections.filter(sel =>
-      (sel.title || '').toLowerCase().includes(lowerQuery) ||
-      (sel.sport || '').toLowerCase().includes(lowerQuery) ||
-      sel.winners.some(winner => 
-        winner.player.toLowerCase().includes(lowerQuery) ||
-        winner.pick.toLowerCase().includes(lowerQuery)
-      )
+  const showMessage = (message: string, type: 'info' | 'success' | 'warning' | 'error') => {
+    setSnackbarMessage(message);
+    setSnackbarType(type);
+    setShowSnackbar(true);
+    
+    // Auto-hide after 3 seconds
+    setTimeout(() => {
+      setShowSnackbar(false);
+    }, 3000);
+  };
+
+  const formatPropType = (type: string) => {
+    const typeMap: Record<string, string> = {
+      'player_points': 'Points',
+      'player_rebounds': 'Rebounds',
+      'player_assists': 'Assists',
+      'player_threes': '3-Pointers',
+      'points': 'Points',
+      'rebounds': 'Rebounds',
+      'assists': 'Assists',
+      'passing_yards': 'Passing Yards',
+      'rushing_yards': 'Rushing Yards',
+      'receiving_yards': 'Receiving Yards',
+      'strikeouts': 'Strikeouts',
+      'hits': 'Hits',
+      'home_runs': 'Home Runs'
+    };
+    
+    return typeMap[type] || type.replace('player_', '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  };
+
+  const getSportIcon = (sportType: string) => {
+    switch(sportType.toLowerCase()) {
+      case 'nba': return '🏀';
+      case 'nfl': return '🏈';
+      case 'mlb': return '⚾';
+      default: return '🎯';
+    }
+  };
+
+  const getSportColor = (sportType: string) => {
+    switch(sportType.toLowerCase()) {
+      case 'nba': return '#ef4444';
+      case 'nfl': return '#3b82f6';
+      case 'mlb': return '#f59e0b';
+      default: return '#8b5cf6';
+    }
+  };
+
+  const getBookmakerColor = (bookmaker: string) => {
+    const bookmakerColors: Record<string, string> = {
+      'draftkings': '#8b5cf6',
+      'fanduel': '#3b82f6',
+      'betmgm': '#ef4444',
+      'pointsbet': '#10b981',
+      'caesars': '#f59e0b',
+      'barstool': '#ec4899',
+      'bet365': '#059669',
+      'sugarhouse': '#8b5cf6',
+      'twinspires': '#3b82f6',
+      'wynnbet': '#ef4444',
+    };
+    
+    return bookmakerColors[bookmaker.toLowerCase()] || '#64748b';
+  };
+
+  const formatPrice = (price: number | null) => {
+    if (price === null || price === undefined) return 'N/A';
+    
+    if (price > 0) return `+${price}`;
+    return price.toString();
+  };
+
+  // Add debug function for development
+  const handleDebug = () => {
+    console.log('🔍 Debug Information:');
+    console.log('Active endpoint:', activeEndpoint);
+    console.log('Player props count:', playerProps.length);
+    console.log('Filtered props count:', filteredProps.length);
+    console.log('Sport:', sport);
+    console.log('Selected league:', selectedLeague);
+    console.log('Search query:', searchQuery);
+    console.log('Available endpoints:', ENDPOINTS_TO_TRY);
+    
+    Alert.alert(
+      'Debug Info',
+      `Endpoint: ${activeEndpoint}\nProps: ${playerProps.length}\nFiltered: ${filteredProps.length}\nSport: ${sport}`,
+      [{ text: 'OK', style: 'default' }]
     );
-    
-    setFilteredSelections(filtered);
-    logAnalyticsEvent('prizepicks_search', { query, results: filtered.length });
   };
 
-  const simulateSelection = async (selectionId) => {
-    setSimulating(true);
-    setShowSimulationModal(true);
+  const renderPropCard = ({ item, index }: { item: PlayerProp; index: number }) => {
+    const sportColor = getSportColor(item.sport || sport);
+    const bookmakerColor = getBookmakerColor(item.bookmaker);
     
-    logAnalyticsEvent('prizepicks_simulation_start', { selectionId });
-    
-    try {
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      logAnalyticsEvent('prizepicks_simulation_complete', {
-        selectionId,
-        simulatedResult: 'Win',
-        winners: 3
-      });
-      
-      setTimeout(() => {
-        setShowSimulationModal(false);
-        setSimulating(false);
-        Alert.alert('Simulation Complete', '3-winner PrizePicks selection simulated successfully!');
-      }, 1000);
-      
-    } catch (error) {
-      console.error('Error simulating outcome:', error);
-      logAnalyticsEvent('prizepicks_simulation_error', { error: error.message });
-      Alert.alert('Error', 'Failed to simulate selection');
-      setSimulating(false);
-      setShowSimulationModal(false);
-    }
-  };
-
-  const handleGenerateSelections = async () => {
-    if (dailySelectionsLeft <= 0) {
-      Alert.alert(
-        'Daily Limit Reached',
-        'You have used your 2 selections for today. Each selection contains 3 winners. Come back tomorrow for more!',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
-    setGeneratingSelections(true);
-    
-    try {
-      // Decrement the counter
-      const newCount = dailySelectionsLeft - 1;
-      setDailySelectionsLeft(newCount);
-      
-      // Save to AsyncStorage
-      const usedToday = 2 - newCount;
-      await AsyncStorage.setItem('dailyPrizePicksUsed', usedToday.toString());
-
-      // Simulate generation
-      setTimeout(() => {
-        setGeneratingSelections(false);
-        Alert.alert(
-          'PrizePicks Generated!',
-          `Daily PrizePicks have been successfully generated. Each selection contains 3 winners. You have ${newCount} selection(s) left today.`,
-          [{ text: 'OK', style: 'default' }]
-        );
-        logAnalyticsEvent('daily_prizepicks_generated', {
-          selectionsLeft: newCount,
-          winnersPerSelection: 3
-        });
-        
-        // Reload today's selections
-        loadTodaySelections();
-      }, 2000);
-      
-    } catch (error) {
-      console.error('Error generating selections:', error);
-      Alert.alert('Error', 'Failed to generate selections');
-      setGeneratingSelections(false);
-    }
-  };
-
-  const renderWinnerItem = (winner, index) => (
-    <View key={index} style={styles.winnerItem}>
-      <View style={styles.winnerPlayer}>
-        <Text style={styles.winnerPlayerName}>{winner.player}</Text>
-        <Text style={styles.winnerPick}>{winner.pick}</Text>
-      </View>
-      <Text style={[
-        styles.winnerOdds,
-        winner.odds.startsWith('+') ? styles.positiveOdds : styles.negativeOdds
-      ]}>
-        {winner.odds}
-      </Text>
-    </View>
-  );
-
-  const renderSelectionItem = ({ item }) => {
-    const isPremiumLocked = item.requiresPremium;
-
-    const getConfidenceStyle = () => {
-      if (item.confidence >= 85) return styles.confidenceBadgeHigh;
-      if (item.confidence >= 75) return styles.confidenceBadgeMedium;
-      if (item.confidence >= 65) return styles.confidenceBadgeLow;
-      return styles.confidenceBadgeVeryLow;
-    };
-
-    const getBumpRiskStyle = () => {
-      if (item.bumpRisk === 'High') return styles.bumpRiskHigh;
-      if (item.bumpRisk === 'Medium') return styles.bumpRiskMedium;
-      return styles.bumpRiskLow;
-    };
-
-    const confidenceStyle = getConfidenceStyle();
-    const bumpRiskStyle = getBumpRiskStyle();
-
     return (
-      <View style={styles.selectionCard}>
-        <View style={styles.selectionCardContent}>
-          <View style={styles.selectionHeader}>
-            <View style={styles.selectionInfo}>
-              <Text style={styles.selectionTitle}>{item.title}</Text>
-              <View style={styles.typeBadge}>
-                <Ionicons name="trophy" size={12} color="#8b5cf6" />
-                <Text style={styles.typeText}>{item.type}</Text>
+      <View key={index} style={styles.propCard}>
+        <LinearGradient
+          colors={['rgba(30, 41, 59, 0.9)', 'rgba(15, 23, 42, 0.9)']}
+          style={styles.propCardGradient}
+        >
+          {/* Card Header */}
+          <View style={styles.propHeader}>
+            <View style={styles.propPlayerInfo}>
+              <View style={[styles.sportIcon, { backgroundColor: sportColor }]}>
+                <Text style={styles.sportIconText}>{getSportIcon(item.sport || sport)}</Text>
+              </View>
+              <View style={styles.playerDetails}>
+                <Text style={styles.playerName}>{item.player_name}</Text>
+                <Text style={styles.gameInfo}>{item.game}</Text>
               </View>
             </View>
-            <View style={[styles.confidenceBadge, confidenceStyle]}>
-              <Text style={styles.confidenceText}>{item.confidence}%</Text>
+            
+            <View style={[styles.bookmakerBadge, { backgroundColor: bookmakerColor }]}>
+              <Text style={styles.bookmakerText}>{item.bookmaker}</Text>
             </View>
           </View>
           
-          <View style={styles.sportRow}>
-            <View style={[
-              styles.sportBadge,
-              item.sport === 'NBA' ? styles.nbaBadge :
-              item.sport === 'NFL' ? styles.nflBadge :
-              styles.mlbBadge
-            ]}>
-              <Text style={styles.sportText}>{item.sport}</Text>
+          {/* Prop Details */}
+          <View style={styles.propDetails}>
+            <View style={styles.propTypeRow}>
+              <Text style={styles.propType}>{formatPropType(item.prop_type)}</Text>
+              <View style={styles.lineContainer}>
+                <Text style={styles.lineLabel}>Line:</Text>
+                <Text style={styles.lineValue}>{item.line}</Text>
+              </View>
             </View>
-            <View style={styles.payoutBadge}>
-              <Ionicons name="cash" size={12} color="#f59e0b" />
-              <Text style={styles.payoutText}>{item.payoutMultiplier}</Text>
-            </View>
-          </View>
-          
-          <View style={styles.winnersContainer}>
-            <Text style={styles.winnersTitle}>🎯 3-Winner Combo:</Text>
-            {item.winners.map((winner, index) => renderWinnerItem(winner, index))}
-          </View>
-          
-          <View style={styles.oddsDisplay}>
-            <View style={styles.oddsItem}>
-              <Text style={styles.oddsLabel}>Total Odds</Text>
-              <Text style={[styles.totalOdds, item.totalOdds.startsWith('+') ? styles.positiveOdds : styles.negativeOdds]}>
-                {item.totalOdds}
-              </Text>
-            </View>
-            <View style={styles.edgeBadge}>
-              <Ionicons name="trending-up" size={12} color="white" />
-              <Text style={styles.edgeText}>Edge: {item.edgeScore}/10</Text>
-            </View>
-            <View style={[styles.bumpRiskBadge, bumpRiskStyle]}>
-              <Ionicons name={item.bumpRisk === 'High' ? "warning" : "shield"} size={12} color="white" />
-              <Text style={styles.bumpRiskText}>Bump: {item.bumpRisk}</Text>
-            </View>
-          </View>
-          
-          <View style={styles.modelInfo}>
-            <View style={styles.modelBadge}>
-              <Ionicons name="analytics" size={12} color="#3b82f6" />
-              <Text style={styles.modelText}>{item.model} • {item.modelAccuracy}</Text>
-            </View>
-          </View>
-          
-          <View style={styles.analysisContainer}>
-            <Ionicons name="bulb" size={20} color="#3b82f6" />
-            <Text style={[
-              styles.analysisText,
-              isPremiumLocked && styles.premiumLockedText
-            ]}>
-              {isPremiumLocked ? '🔒 Premium analysis available' : item.analysis}
-            </Text>
-          </View>
-          
-          <View style={styles.footer}>
-            <View style={styles.footerLeft}>
-              <Text style={styles.timestamp}>{item.timestamp}</Text>
-            </View>
-            <View style={styles.actionButtons}>
-              <TouchableOpacity 
-                style={styles.simulateButton}
-                onPress={() => simulateSelection(item.id)}
-                disabled={simulating}
-              >
+            
+            {/* Odds Section */}
+            <View style={styles.oddsSection}>
+              <View style={styles.oddsColumn}>
                 <LinearGradient
-                  colors={['#3b82f6', '#1d4ed8']}
-                  style={styles.simulateButtonGradient}
+                  colors={['#10b981', '#059669']}
+                  style={styles.oddsButton}
                 >
-                  <Ionicons name="play" size={14} color="white" />
-                  <Text style={styles.simulateButtonText}>Simulate</Text>
+                  <Text style={styles.oddsLabel}>Over</Text>
+                  <Text style={styles.oddsValue}>
+                    {formatPrice(item.over_price)}
+                  </Text>
                 </LinearGradient>
-              </TouchableOpacity>
+              </View>
               
-              <TouchableOpacity 
-                style={styles.trackButton}
-                onPress={() => {
-                  if (isPremiumLocked) {
-                    Alert.alert(
-                      'Premium Selection',
-                      'This selection requires premium access.',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Upgrade', onPress: () => navigation.goToSuccessMetrics() }
-                      ]
-                    );
-                    return;
-                  }
-                  
-                  console.log('Selected PrizePicks:', item);
-                  logAnalyticsEvent('prizepicks_tracked', {
-                    type: item.type,
-                    sport: item.sport,
-                    confidence: item.confidence,
-                    winners: item.winners.length
-                  });
-                  Alert.alert('Tracked', '3-winner PrizePicks selection added to tracked picks.');
-                }}
-              >
+              <View style={styles.oddsColumn}>
                 <LinearGradient
-                  colors={['#059669', '#047857']}
-                  style={styles.trackButtonGradient}
+                  colors={['#ef4444', '#dc2626']}
+                  style={styles.oddsButton}
                 >
-                  <Ionicons name="bookmark" size={14} color="white" />
-                  <Text style={styles.trackButtonText}>Track</Text>
+                  <Text style={styles.oddsLabel}>Under</Text>
+                  <Text style={styles.oddsValue}>
+                    {formatPrice(item.under_price)}
+                  </Text>
                 </LinearGradient>
-              </TouchableOpacity>
+              </View>
+            </View>
+            
+            {/* Footer */}
+            <View style={styles.propFooter}>
+              <View style={styles.footerLeft}>
+                <View style={[styles.sportBadge, { backgroundColor: sportColor + '20' }]}>
+                  <Text style={[styles.sportBadgeText, { color: sportColor }]}>
+                    {(item.sport || sport).toUpperCase()}
+                  </Text>
+                </View>
+              </View>
+              
+              <View style={styles.footerRight}>
+                <Ionicons name="time-outline" size={12} color="#94a3b8" />
+                <Text style={styles.updateTime}>
+                  {new Date(item.last_update).toLocaleTimeString([], { 
+                    hour: '2-digit', 
+                    minute: '2-digit' 
+                  })}
+                </Text>
+              </View>
             </View>
           </View>
-        </View>
+        </LinearGradient>
       </View>
     );
   };
@@ -1207,10 +481,37 @@ export default function PrizePicksScreen() {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={styles.loadingText}>Loading PrizePicks...</Text>
+        <Text style={styles.loadingText}>Loading {sport.toUpperCase()} player props...</Text>
+        <Text style={styles.loadingSubtext}>Trying endpoints...</Text>
       </View>
     );
   }
+
+  if (error && playerProps.length === 0) {
+    return (
+      <View style={styles.centerContainer}>
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle-outline" size={64} color="#ef4444" />
+          <Text style={styles.errorTitle}>Error Loading Data</Text>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={() => fetchPrizePicksData()}
+          >
+            <LinearGradient
+              colors={['#3b82f6', '#1d4ed8']}
+              style={styles.retryButtonGradient}
+            >
+              <Ionicons name="refresh" size={20} color="white" />
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  const propsArray = Array.isArray(playerProps) ? playerProps : [];
 
   return (
     <View style={styles.container}>
@@ -1227,29 +528,44 @@ export default function PrizePicksScreen() {
               <Ionicons name="arrow-back" size={24} color="white" />
             </TouchableOpacity>
             
-            <TouchableOpacity 
-              style={styles.headerSearchButton}
-              onPress={() => {
-                setShowSearch(true);
-                logAnalyticsEvent('prizepicks_search_open');
-              }}
-            >
-              <Ionicons name="search-outline" size={20} color="white" />
-            </TouchableOpacity>
+            <View style={styles.headerRightButtons}>
+              <TouchableOpacity 
+                style={styles.debugButton}
+                onPress={handleDebug}
+              >
+                <Ionicons name="bug-outline" size={20} color="white" />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.headerSearchButton}
+                onPress={() => {
+                  setShowSearch(true);
+                  logAnalyticsEvent('prizepicks_search_open');
+                }}
+              >
+                <Ionicons name="search-outline" size={20} color="white" />
+              </TouchableOpacity>
+            </View>
           </View>
           
           <View style={styles.headerMain}>
             <View style={styles.headerIcon}>
-              <Ionicons name="trophy" size={32} color="white" />
-              <View style={styles.headerCountBadge}>
-                <Text style={styles.headerCountText}>3</Text>
-              </View>
+              <Ionicons name="trending-up" size={32} color="white" />
             </View>
             <View style={styles.headerText}>
-              <Text style={styles.headerTitle}>PrizePicks Hub</Text>
+              <Text style={styles.headerTitle}>PrizePicks Player Props</Text>
               <Text style={styles.headerSubtitle}>
-                3 winners per selection • 2 selections daily
+                Real-time player prop lines from sportsbooks
+                {activeEndpoint && (
+                  <Text style={styles.endpointInfo}>
+                    {'\n'}Source: {activeEndpoint === '' ? 'Loading...' : 
+                      activeEndpoint.includes('mock') ? 'Sample Data' : activeEndpoint}
+                  </Text>
+                )}
               </Text>
+            </View>
+            <View style={styles.headerCountBadge}>
+              <Text style={styles.headerCountText}>{propsArray.length}</Text>
             </View>
           </View>
         </LinearGradient>
@@ -1268,15 +584,15 @@ export default function PrizePicksScreen() {
         {showSearch && (
           <>
             <SearchBar
-              placeholder="Search PrizePicks by player, sport, or type..."
+              placeholder="Search players, games, or props..."
               onSearch={handleSearch}
               style={styles.homeSearchBar}
             />
             
-            {searchQuery.trim() && selections.length !== filteredSelections.length && (
+            {searchQuery.trim() && propsArray.length !== filteredProps.length && (
               <View style={styles.searchResultsInfo}>
                 <Text style={styles.searchResultsText}>
-                  {filteredSelections.length} of {selections.length} picks match "{searchQuery}"
+                  {filteredProps.length} of {propsArray.length} props match "{searchQuery}"
                 </Text>
                 <TouchableOpacity 
                   onPress={() => setSearchQuery('')}
@@ -1289,65 +605,93 @@ export default function PrizePicksScreen() {
           </>
         )}
 
-        <DailyPrizePicksGenerator 
-          onGenerate={handleGenerateSelections}
-          isGenerating={generatingSelections}
-          selectionsLeft={dailySelectionsLeft}
-        />
-
-        <View style={styles.dailyStats}>
-          <View style={styles.dailyStatItem}>
-            <Text style={styles.dailyStatValue}>{dailySelectionsLeft}</Text>
-            <Text style={styles.dailyStatLabel}>Selections Left</Text>
-          </View>
-          <View style={styles.dailyStatDivider} />
-          <View style={styles.dailyStatItem}>
-            <Text style={styles.dailyStatValue}>3</Text>
-            <Text style={styles.dailyStatLabel}>Winners per Selection</Text>
-          </View>
-          <View style={styles.dailyStatDivider} />
-          <View style={styles.dailyStatItem}>
-            <Text style={styles.dailyStatValue}>{todaySelections.length * 3}</Text>
-            <Text style={styles.dailyStatLabel}>Total Winners Today</Text>
-          </View>
-        </View>
-
-        <View style={styles.timeframeSelector}>
-          {['Today', 'Tomorrow', 'Week', 'All Upcoming'].map((timeframe) => (
-            <TouchableOpacity
-              key={timeframe}
-              style={[
-                styles.timeframeButton,
-                selectedTimeframe === timeframe && styles.timeframeButtonActive,
-              ]}
-              onPress={() => {
-                setSelectedTimeframe(timeframe);
-                logAnalyticsEvent('prizepicks_timeframe_filter', { timeframe });
-              }}
-            >
-              {selectedTimeframe === timeframe ? (
+        {/* Sport Selector */}
+        <View style={styles.sportSelector}>
+          <Text style={styles.sportSelectorTitle}>Select Sport:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {(['nba', 'nfl', 'mlb'] as const).map((sportType) => (
+              <TouchableOpacity
+                key={sportType}
+                onPress={() => handleSportChange(sportType)}
+              >
                 <LinearGradient
-                  colors={['#3b82f6', '#1d4ed8']}
-                  style={styles.timeframeButtonGradient}
+                  colors={
+                    sport === sportType 
+                      ? [getSportColor(sportType), getSportColor(sportType) + 'CC']
+                      : ['#1e293b', '#334155']
+                  }
+                  style={[
+                    styles.sportButton,
+                    sport === sportType && styles.sportButtonActive
+                  ]}
                 >
-                  <Text style={styles.timeframeButtonTextActive}>{timeframe}</Text>
+                  <Text style={styles.sportIconLarge}>{getSportIcon(sportType)}</Text>
+                  <Text style={[
+                    styles.sportButtonText,
+                    sport === sportType && styles.sportButtonTextActive
+                  ]}>
+                    {sportType.toUpperCase()}
+                  </Text>
                 </LinearGradient>
-              ) : (
-                <Text style={styles.timeframeButtonText}>{timeframe}</Text>
-              )}
-            </TouchableOpacity>
-          ))}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
 
+        {/* Data Summary */}
+        <View style={styles.dataSummary}>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Total Props</Text>
+            <Text style={styles.summaryValue}>{propsArray.length}</Text>
+          </View>
+          
+          <View style={styles.summaryDivider} />
+          
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Sport</Text>
+            <Text style={[styles.summaryValue, { color: getSportColor(sport) }]}>
+              {sport.toUpperCase()}
+            </Text>
+          </View>
+          
+          <View style={styles.summaryDivider} />
+          
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Source</Text>
+            <Text style={[styles.summaryValue, { fontSize: 10 }]}>
+              {activeEndpoint === '' ? 'Loading...' : 
+               activeEndpoint.includes('mock') ? 'Sample' : 'API'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Status Alert */}
+        <View style={styles.statusAlert}>
+          <LinearGradient
+            colors={propsArray.length === 0 ? ['#f59e0b', '#d97706'] : ['#10b981', '#059669']}
+            style={styles.statusAlertGradient}
+          >
+            <Ionicons 
+              name={propsArray.length === 0 ? "information-circle" : "checkmark-circle"} 
+              size={20} 
+              color="white" 
+            />
+            <Text style={styles.statusAlertText}>
+              {propsArray.length === 0 
+                ? `No player props available for ${sport.toUpperCase()} right now. Try refreshing or check back later.`
+                : `Loaded ${propsArray.length} ${sport.toUpperCase()} player props`}
+            </Text>
+          </LinearGradient>
+        </View>
+
+        {/* League Filter */}
         <View style={styles.leagueSelector}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {[
-              { id: 'All', name: 'All Sports', icon: 'earth', gradient: ['#3b82f6', '#1d4ed8'] },
-              { id: 'NBA', name: 'NBA', icon: 'basketball', gradient: ['#ef4444', '#dc2626'] },
-              { id: 'NFL', name: 'NFL', icon: 'american-football', gradient: ['#059669', '#047857'] },
-              { id: 'MLB', name: 'MLB', icon: 'baseball', gradient: ['#f59e0b', '#d97706'] },
-              { id: 'NHL', name: 'NHL', icon: 'ice-cream', gradient: ['#1e40af', '#1e3a8a'] },
-              { id: 'Soccer', name: 'Soccer', icon: 'football', gradient: ['#10b981', '#059669'] },
+              { id: 'All', name: 'All Leagues', icon: 'earth' },
+              { id: 'NBA', name: 'NBA', icon: 'basketball' },
+              { id: 'NFL', name: 'NFL', icon: 'american-football' },
+              { id: 'MLB', name: 'MLB', icon: 'baseball' },
             ].map((league) => (
               <TouchableOpacity
                 key={league.id}
@@ -1362,7 +706,7 @@ export default function PrizePicksScreen() {
               >
                 {selectedLeague === league.id ? (
                   <LinearGradient
-                    colors={league.gradient}
+                    colors={[getSportColor(league.id.toLowerCase()), getSportColor(league.id.toLowerCase()) + 'CC']}
                     style={styles.leagueButtonGradient}
                   >
                     <Ionicons name={league.icon} size={18} color="#fff" />
@@ -1379,106 +723,193 @@ export default function PrizePicksScreen() {
           </ScrollView>
         </View>
 
-        <View style={styles.selectionsSection}>
+        {/* Player Props Section */}
+        <View style={styles.propsSection}>
           <View style={styles.sectionHeader}>
             <View>
-              <Text style={styles.sectionTitle}>🎯 Curated 3-Winner Selections</Text>
-              <Text style={styles.sectionSubtitle}>Each pick contains 3 winners for maximum value</Text>
-            </View>
-            <View style={styles.selectionCountBadge}>
-              <Text style={styles.selectionCount}>
-                {filteredSelections.length} picks • {selectedTimeframe}
+              <Text style={styles.sectionTitle}>
+                {getSportIcon(sport)} {sport.toUpperCase()} Player Props
+              </Text>
+              <Text style={styles.sectionSubtitle}>
+                Real-time lines from top sportsbooks
               </Text>
             </View>
+            <TouchableOpacity 
+              style={styles.refreshButton}
+              onPress={onRefresh}
+              disabled={refreshing}
+            >
+              <LinearGradient
+                colors={['#3b82f6', '#1d4ed8']}
+                style={styles.refreshButtonGradient}
+              >
+                <Ionicons name="refresh" size={16} color="white" />
+                <Text style={styles.refreshButtonText}>
+                  {refreshing ? 'Refreshing...' : 'Refresh'}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
           
-          {filteredSelections.length > 0 ? (
+          {filteredProps.length > 0 ? (
             <FlatList
-              data={filteredSelections}
-              renderItem={renderSelectionItem}
-              keyExtractor={item => `selection-${item.id}-${item.sport}`}
+              data={filteredProps.slice(0, 50)}
+              renderItem={renderPropCard}
+              keyExtractor={(item, index) => `prop-${index}-${item.player_name}-${item.prop_type}`}
               scrollEnabled={false}
-              contentContainerStyle={styles.selectionsList}
+              contentContainerStyle={styles.propsList}
             />
           ) : (
             <View style={styles.emptyContainer}>
               <View style={styles.emptyIconContainer}>
-                <Ionicons name="trophy-outline" size={48} color="#8b5cf6" />
-                <View style={styles.emptyThreeBadge}>
-                  <Text style={styles.emptyThreeBadgeText}>3</Text>
-                </View>
+                <Ionicons name="stats-chart-outline" size={48} color="#64748b" />
               </View>
               {searchQuery.trim() ? (
                 <>
-                  <Text style={styles.emptyText}>No PrizePicks found</Text>
+                  <Text style={styles.emptyText}>No props found</Text>
                   <Text style={styles.emptySubtext}>Try a different search or filter</Text>
+                </>
+              ) : propsArray.length === 0 ? (
+                <>
+                  <Text style={styles.emptyText}>No props available</Text>
+                  <Text style={styles.emptySubtext}>
+                    No {sport.toUpperCase()} player props are currently available
+                  </Text>
+                  <TouchableOpacity 
+                    style={styles.emptyActionButton}
+                    onPress={onRefresh}
+                  >
+                    <LinearGradient
+                      colors={['#3b82f6', '#1d4ed8']}
+                      style={styles.emptyActionGradient}
+                    >
+                      <Ionicons name="refresh" size={18} color="white" />
+                      <Text style={styles.emptyActionText}>Refresh Data</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
                 </>
               ) : (
                 <>
-                  <Text style={styles.emptyText}>No PrizePicks available</Text>
-                  <Text style={styles.emptySubtext}>Generate selections or check back later</Text>
+                  <Text style={styles.emptyText}>No matching props</Text>
+                  <Text style={styles.emptySubtext}>Try adjusting your filters</Text>
                 </>
               )}
             </View>
           )}
         </View>
+
+        {/* Analytics Section */}
+        {analytics.length > 0 && (
+          <View style={styles.analyticsSection}>
+            <Text style={styles.sectionTitle}>📊 Analytics</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {analytics.slice(0, 5).map((item, index) => (
+                <View key={index} style={styles.analyticsCard}>
+                  <LinearGradient
+                    colors={['#1e293b', '#0f172a']}
+                    style={styles.analyticsCardGradient}
+                  >
+                    <Text style={styles.analyticsTitle}>
+                      {item.sport || item.player || item.type || 'Analytics'}
+                    </Text>
+                    {item.winRate && (
+                      <Text style={styles.analyticsValue}>
+                        Win Rate: {(parseFloat(item.winRate) || 0).toFixed(1)}%
+                      </Text>
+                    )}
+                    {item.picks && (
+                      <Text style={styles.analyticsValue}>
+                        Picks: {item.picks}
+                      </Text>
+                    )}
+                  </LinearGradient>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Footer Stats */}
+        {filteredProps.length > 0 && (
+          <View style={styles.footerStats}>
+            <LinearGradient
+              colors={['#1e293b', '#0f172a']}
+              style={styles.footerStatsGradient}
+            >
+              <View style={styles.footerStatsRow}>
+                <View style={styles.footerStatItem}>
+                  <Text style={styles.footerStatLabel}>Current Sport</Text>
+                  <Text style={[styles.footerStatValue, { color: getSportColor(sport) }]}>
+                    {getSportIcon(sport)} {sport.toUpperCase()}
+                  </Text>
+                </View>
+                
+                <View style={styles.footerStatDivider} />
+                
+                <View style={styles.footerStatItem}>
+                  <Text style={styles.footerStatLabel}>Displayed Props</Text>
+                  <Text style={[styles.footerStatValue, { color: '#3b82f6' }]}>
+                    {filteredProps.length}
+                  </Text>
+                </View>
+                
+                <View style={styles.footerStatDivider} />
+                
+                <View style={styles.footerStatItem}>
+                  <Text style={styles.footerStatLabel}>Last Updated</Text>
+                  <Text style={styles.footerStatValue}>
+                    {new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                  </Text>
+                </View>
+              </View>
+              
+              <View style={styles.footerBookmakers}>
+                <Text style={styles.footerBookmakersLabel}>Bookmakers: </Text>
+                <Text style={styles.footerBookmakersValue}>
+                  {Array.from(new Set(filteredProps.map(p => p.bookmaker))).join(', ')}
+                </Text>
+              </View>
+            </LinearGradient>
+          </View>
+        )}
       </ScrollView>
       
-      <Modal
-        transparent={true}
-        visible={showSimulationModal}
-        animationType="fade"
-        onRequestClose={() => !simulating && setShowSimulationModal(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              {simulating ? (
-                <>
-                  <ActivityIndicator size="large" color="#8b5cf6" />
-                  <Text style={styles.modalTitle}>Generating PrizePicks...</Text>
-                  <Text style={styles.modalText}>
-                    Analyzing 3-winner combinations and calculating edge
-                  </Text>
-                  <View style={styles.processingSteps}>
-                    <View style={styles.stepIndicator}>
-                      <View style={[styles.stepDot, styles.stepActive]} />
-                      <View style={styles.stepLine} />
-                      <View style={[styles.stepDot, styles.stepActive]} />
-                      <View style={styles.stepLine} />
-                      <View style={[styles.stepDot, styles.stepActive]} />
-                    </View>
-                    <Text style={styles.stepsText}>3 winners per selection</Text>
-                  </View>
-                </>
-              ) : (
-                <>
-                  <View style={[styles.successIconContainer, { backgroundColor: '#8b5cf6' }]}>
-                    <View style={styles.successThreeBadge}>
-                      <Text style={styles.successThreeBadgeText}>3</Text>
-                    </View>
-                    <Ionicons name="trophy" size={40} color="white" />
-                  </View>
-                  <Text style={styles.modalTitle}>PrizePicks Generated!</Text>
-                  <Text style={styles.modalText}>
-                    {dailySelectionsLeft} selection(s) left today • 3 winners per selection
-                  </Text>
-                  <TouchableOpacity
-                    style={[styles.modalButton, {backgroundColor: '#8b5cf6'}]}
-                    onPress={() => setShowSimulationModal(false)}
-                  >
-                    <Text style={styles.modalButtonText}>View 3-Winner Picks</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
+      {/* Snackbar */}
+      {showSnackbar && (
+        <Modal
+          transparent={true}
+          animationType="fade"
+          visible={showSnackbar}
+          onRequestClose={() => setShowSnackbar(false)}
+        >
+          <View style={styles.snackbarOverlay}>
+            <LinearGradient
+              colors={
+                snackbarType === 'success' ? ['#10b981', '#059669'] :
+                snackbarType === 'error' ? ['#ef4444', '#dc2626'] :
+                snackbarType === 'warning' ? ['#f59e0b', '#d97706'] :
+                ['#3b82f6', '#1d4ed8']
+              }
+              style={styles.snackbar}
+            >
+              <Ionicons 
+                name={
+                  snackbarType === 'success' ? "checkmark-circle" :
+                  snackbarType === 'error' ? "alert-circle" :
+                  snackbarType === 'warning' ? "warning" : "information-circle"
+                } 
+                size={20} 
+                color="white" 
+              />
+              <Text style={styles.snackbarText}>{snackbarMessage}</Text>
+            </LinearGradient>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
       
       {!showSearch && (
         <TouchableOpacity
-          style={[styles.floatingSearchButton, {backgroundColor: '#8b5cf6'}]}
+          style={styles.floatingSearchButton}
           onPress={() => {
             setShowSearch(true);
             logAnalyticsEvent('prizepicks_search_toggle');
@@ -1517,6 +948,57 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   
+  loadingSubtext: {
+    marginTop: 5,
+    fontSize: 14,
+    color: '#94a3b8',
+  },
+  
+  errorContainer: {
+    alignItems: 'center',
+    padding: 30,
+    backgroundColor: '#1e293b',
+    borderRadius: 20,
+    margin: 20,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  
+  errorTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#f1f5f9',
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  
+  errorText: {
+    fontSize: 16,
+    color: '#cbd5e1',
+    textAlign: 'center',
+    marginBottom: 25,
+  },
+  
+  retryButton: {
+    borderRadius: 15,
+    overflow: 'hidden',
+  },
+  
+  retryButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 25,
+    paddingVertical: 12,
+    borderRadius: 15,
+  },
+  
+  retryButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 10,
+  },
+  
   header: {
     paddingHorizontal: 16,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
@@ -1535,6 +1017,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
+  },
+  
+  headerRightButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  
+  debugButton: {
+    padding: 8,
+    backgroundColor: 'rgba(30, 41, 59, 0.9)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
   },
   
   backButton: {
@@ -1568,27 +1066,6 @@ const styles = StyleSheet.create({
     padding: 15,
     borderRadius: 25,
     marginRight: 15,
-    position: 'relative',
-  },
-  
-  headerCountBadge: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    backgroundColor: '#ef4444',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#0f172a',
-  },
-  
-  headerCountText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
   },
   
   headerText: {
@@ -1605,11 +1082,32 @@ const styles = StyleSheet.create({
   },
   
   headerSubtitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: 'white',
     opacity: 0.9,
     marginTop: 5,
     fontWeight: '500',
+  },
+  
+  endpointInfo: {
+    fontSize: 12,
+    color: '#cbd5e1',
+    fontStyle: 'italic',
+  },
+  
+  headerCountBadge: {
+    backgroundColor: 'rgba(30, 41, 59, 0.9)',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 15,
+    borderWidth: 2,
+    borderColor: 'white',
+  },
+  
+  headerCountText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
 
   homeSearchBar: {
@@ -1665,11 +1163,58 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  dailyStats: {
+  sportSelector: {
+    marginHorizontal: 16,
+    marginTop: 20,
+    marginBottom: 15,
+  },
+  
+  sportSelectorTitle: {
+    fontSize: 14,
+    color: '#94a3b8',
+    marginBottom: 10,
+    fontWeight: '500',
+  },
+  
+  sportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 15,
+    marginRight: 10,
+    minWidth: 100,
+  },
+  
+  sportButtonActive: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  
+  sportIconLarge: {
+    fontSize: 18,
+    marginRight: 8,
+  },
+  
+  sportButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+  
+  sportButtonTextActive: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+
+  dataSummary: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginHorizontal: 20,
-    marginBottom: 20,
+    marginHorizontal: 16,
+    marginBottom: 15,
     backgroundColor: '#1e293b',
     borderRadius: 15,
     padding: 15,
@@ -1677,78 +1222,56 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
   },
   
-  dailyStatItem: {
+  summaryCard: {
     alignItems: 'center',
     flex: 1,
   },
   
-  dailyStatDivider: {
+  summaryDivider: {
     width: 1,
     height: '100%',
     backgroundColor: '#334155',
   },
   
-  dailyStatValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#3b82f6',
-  },
-  
-  dailyStatLabel: {
+  summaryLabel: {
     fontSize: 12,
     color: '#94a3b8',
-    marginTop: 5,
-    textAlign: 'center',
+    marginBottom: 5,
+    textTransform: 'uppercase',
+    fontWeight: '600',
+  },
+  
+  summaryValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#f1f5f9',
   },
 
-  timeframeSelector: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginHorizontal: 20,
-    marginVertical: 15,
-    backgroundColor: '#1e293b',
-    borderRadius: 15,
-    padding: 8,
-  },
-  
-  timeframeButton: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+  statusAlert: {
+    marginHorizontal: 16,
+    marginBottom: 15,
     borderRadius: 12,
-    marginHorizontal: 4,
-    alignItems: 'center',
-    backgroundColor: '#0f172a',
+    overflow: 'hidden',
   },
   
-  timeframeButtonActive: {
-    backgroundColor: 'transparent',
-  },
-  
-  timeframeButtonGradient: {
+  statusAlertGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderRadius: 12,
-    width: '100%',
   },
   
-  timeframeButtonText: {
+  statusAlertText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#94a3b8',
-  },
-  
-  timeframeButtonTextActive: {
-    fontSize: 14,
-    fontWeight: 'bold',
     color: 'white',
+    fontWeight: '500',
+    marginLeft: 10,
+    flex: 1,
   },
 
   leagueSelector: {
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     marginBottom: 20,
   },
   
@@ -1789,287 +1312,8 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 
-  selectionCard: {
-    borderRadius: 20,
-    marginBottom: 16,
-    backgroundColor: '#1e293b',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  
-  selectionCardContent: {
-    padding: 20,
-  },
-
-  selectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 15,
-  },
-
-  selectionInfo: {
-    flex: 1,
-  },
-
-  selectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#f1f5f9',
-    marginBottom: 8,
-  },
-
-  typeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#8b5cf620',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: '#8b5cf640',
-  },
-
-  typeText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#8b5cf6',
-    marginLeft: 5,
-  },
-
-  confidenceBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-
-  confidenceBadgeHigh: {
-    backgroundColor: '#10b981',
-  },
-  confidenceBadgeMedium: {
-    backgroundColor: '#3b82f6',
-  },
-  confidenceBadgeLow: {
-    backgroundColor: '#f59e0b',
-  },
-  confidenceBadgeVeryLow: {
-    backgroundColor: '#ef4444',
-  },
-  
-  confidenceText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-
-  sportRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-
-  sportBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    marginRight: 10,
-  },
-
-  nbaBadge: {
-    backgroundColor: '#ef444420',
-    borderWidth: 1,
-    borderColor: '#ef444440',
-  },
-
-  nflBadge: {
-    backgroundColor: '#05966920',
-    borderWidth: 1,
-    borderColor: '#05966940',
-  },
-
-  mlbBadge: {
-    backgroundColor: '#f59e0b20',
-    borderWidth: 1,
-    borderColor: '#f59e0b40',
-  },
-
-  sportText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#e2e8f0',
-  },
-
-  payoutBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f59e0b20',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#f59e0b40',
-  },
-
-  payoutText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#f59e0b',
-    marginLeft: 5,
-  },
-
-  winnersContainer: {
-    backgroundColor: 'rgba(30, 41, 59, 0.8)',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-
-  winnersTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#3b82f6',
-    marginBottom: 10,
-  },
-
-  winnerItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-  },
-
-  winnerPlayer: {
-    flex: 1,
-  },
-
-  winnerPlayerName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#e2e8f0',
-    marginBottom: 2,
-  },
-
-  winnerPick: {
-    fontSize: 13,
-    color: '#94a3b8',
-  },
-
-  winnerOdds: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    minWidth: 60,
-    textAlign: 'right',
-  },
-
-  positiveOdds: {
-    color: '#10b981',
-  },
-
-  negativeOdds: {
-    color: '#ef4444',
-  },
-
-  oddsDisplay: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 15,
-  },
-
-  oddsItem: {
-    flex: 1,
-  },
-
-  oddsLabel: {
-    fontSize: 12,
-    color: '#94a3b8',
-    marginBottom: 5,
-  },
-
-  totalOdds: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-
-  edgeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    backgroundColor: '#10b981',
-    marginHorizontal: 10,
-  },
-
-  edgeText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginLeft: 5,
-  },
-
-  bumpRiskBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    flex: 1,
-  },
-
-  bumpRiskHigh: {
-    backgroundColor: '#ef4444',
-  },
-  bumpRiskMedium: {
-    backgroundColor: '#f59e0b',
-  },
-  bumpRiskLow: {
-    backgroundColor: '#10b981',
-  },
-
-  bumpRiskText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginLeft: 5,
-  },
-  
-  modelInfo: {
-    marginBottom: 15,
-  },
-  
-  modelBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-  },
-
-  modelText: {
-    fontWeight: 'bold',
-    fontSize: 12,
-    marginLeft: 4,
-    color: '#3b82f6',
-  },
-
-  selectionsSection: {
-    marginHorizontal: 20,
+  propsSection: {
+    marginHorizontal: 16,
     marginBottom: 30,
   },
   
@@ -2093,229 +1337,198 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   
-  selectionCountBadge: {
-    backgroundColor: '#8b5cf620',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: '#8b5cf640',
+  refreshButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   
-  selectionCount: {
+  refreshButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  
+  refreshButtonText: {
     fontSize: 14,
-    color: '#8b5cf6',
+    color: 'white',
     fontWeight: 'bold',
+    marginLeft: 8,
   },
   
-  selectionsList: {
+  propsList: {
     paddingBottom: 10,
   },
+
+  propCard: {
+    borderRadius: 20,
+    marginBottom: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
   
-  analysisContainer: {
+  propCardGradient: {
+    padding: 20,
+  },
+
+  propHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'flex-start',
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    padding: 15,
-    borderRadius: 12,
     marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#8b5cf630',
   },
-  
-  analysisText: {
-    fontSize: 15,
-    color: '#cbd5e1',
+
+  propPlayerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
-    marginLeft: 10,
-    lineHeight: 22,
-    fontWeight: '500',
   },
-  
-  premiumLockedText: {
-    color: '#64748b',
-    opacity: 0.7,
+
+  sportIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
-  
-  footer: {
+
+  sportIconText: {
+    fontSize: 18,
+  },
+
+  playerDetails: {
+    flex: 1,
+  },
+
+  playerName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#f1f5f9',
+    marginBottom: 4,
+  },
+
+  gameInfo: {
+    fontSize: 14,
+    color: '#94a3b8',
+  },
+
+  bookmakerBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+
+  bookmakerText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+
+  propDetails: {
+    // No additional styles needed
+  },
+
+  propTypeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+    backgroundColor: 'rgba(30, 41, 59, 0.8)',
+    padding: 12,
+    borderRadius: 10,
+  },
+
+  propType: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#3b82f6',
+  },
+
+  lineContainer: {
+    alignItems: 'flex-end',
+  },
+
+  lineLabel: {
+    fontSize: 12,
+    color: '#94a3b8',
+    marginBottom: 2,
+  },
+
+  lineValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#f1f5f9',
+  },
+
+  oddsSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 15,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+
+  oddsColumn: {
+    flex: 1,
+  },
+
+  oddsButton: {
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+
+  oddsLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 8,
+  },
+
+  oddsValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+
+  propFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  
+
   footerLeft: {
     flex: 1,
   },
 
-  timestamp: {
-    fontSize: 13,
+  sportBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+
+  sportBadgeText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+
+  footerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  updateTime: {
+    fontSize: 12,
     color: '#94a3b8',
-    fontWeight: '500',
-  },
-  
-  actionButtons: {
-    flexDirection: 'row',
-  },
-  
-  simulateButton: {
-    borderRadius: 12,
-    marginRight: 10,
-  },
-  
-  simulateButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  
-  simulateButtonText: {
-    fontSize: 13,
-    color: 'white',
-    fontWeight: 'bold',
     marginLeft: 6,
-  },
-  
-  trackButton: {
-    borderRadius: 12,
-  },
-  
-  trackButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  
-  trackButtonText: {
-    fontSize: 13,
-    color: 'white',
-    fontWeight: 'bold',
-    marginLeft: 6,
-  },
-
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  
-  modalOverlay: {
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  
-  modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 25,
-    padding: 30,
-    alignItems: 'center',
-    width: '85%',
-    maxWidth: 400,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#0f172a',
-    marginTop: 20,
-    textAlign: 'center',
-  },
-  
-  modalText: {
-    fontSize: 15,
-    color: '#475569',
-    marginTop: 10,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  
-  successIconContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-  },
-
-  successThreeBadge: {
-    position: 'absolute',
-    top: -10,
-    right: -10,
-    backgroundColor: '#ef4444',
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: 'white',
-  },
-
-  successThreeBadgeText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  
-  modalButton: {
-    backgroundColor: '#8b5cf6',
-    paddingHorizontal: 30,
-    paddingVertical: 14,
-    borderRadius: 15,
-    marginTop: 25,
-  },
-  
-  modalButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-
-  processingSteps: {
-    marginTop: 25,
-    marginBottom: 15,
-    alignItems: 'center',
-  },
-
-  stepIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-
-  stepDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#e2e8f0',
-  },
-
-  stepLine: {
-    width: 40,
-    height: 3,
-    backgroundColor: '#e2e8f0',
-  },
-
-  stepActive: {
-    backgroundColor: '#8b5cf6',
-  },
-
-  stepsText: {
-    fontSize: 14,
-    color: '#475569',
-    fontWeight: '500',
   },
 
   emptyContainer: {
@@ -2325,45 +1538,170 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e293b',
     borderWidth: 2,
     borderColor: '#334155',
+    marginTop: 20,
   },
 
   emptyIconContainer: {
-    position: 'relative',
     marginBottom: 20,
   },
 
-  emptyThreeBadge: {
-    position: 'absolute',
-    bottom: -5,
-    right: -5,
-    backgroundColor: '#3b82f6',
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#1e293b',
-  },
-
-  emptyThreeBadgeText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  
   emptyText: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#f1f5f9',
     marginTop: 20,
   },
-  
+
   emptySubtext: {
     fontSize: 16,
     color: '#94a3b8',
     marginTop: 8,
     textAlign: 'center',
     fontWeight: '500',
+  },
+
+  emptyActionButton: {
+    marginTop: 25,
+    borderRadius: 15,
+    overflow: 'hidden',
+  },
+
+  emptyActionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 25,
+    paddingVertical: 12,
+    borderRadius: 15,
+  },
+
+  emptyActionText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 10,
+  },
+
+  analyticsSection: {
+    marginHorizontal: 16,
+    marginBottom: 20,
+  },
+
+  analyticsCard: {
+    width: 150,
+    marginRight: 10,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+
+  analyticsCardGradient: {
+    padding: 15,
+  },
+
+  analyticsTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#f1f5f9',
+    marginBottom: 10,
+  },
+
+  analyticsValue: {
+    fontSize: 12,
+    color: '#cbd5e1',
+    marginBottom: 5,
+  },
+
+  footerStats: {
+    marginHorizontal: 16,
+    marginBottom: 30,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+
+  footerStatsGradient: {
+    padding: 20,
+  },
+
+  footerStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+
+  footerStatItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+
+  footerStatDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: '#334155',
+  },
+
+  footerStatLabel: {
+    fontSize: 12,
+    color: '#94a3b8',
+    marginBottom: 5,
+    textTransform: 'uppercase',
+    fontWeight: '600',
+  },
+
+  footerStatValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#f1f5f9',
+  },
+
+  footerBookmakers: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+  },
+
+  footerBookmakersLabel: {
+    fontSize: 12,
+    color: '#94a3b8',
+    fontWeight: '600',
+  },
+
+  footerBookmakersValue: {
+    fontSize: 12,
+    color: '#cbd5e1',
+    fontWeight: 'bold',
+    flex: 1,
+  },
+
+  snackbarOverlay: {
+    position: 'absolute',
+    bottom: 30,
+    left: 16,
+    right: 16,
+    zIndex: 1000,
+  },
+
+  snackbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+
+  snackbarText: {
+    fontSize: 14,
+    color: 'white',
+    fontWeight: '500',
+    marginLeft: 10,
+    flex: 1,
   },
 });
